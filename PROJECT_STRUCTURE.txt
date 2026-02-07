@@ -1,0 +1,55 @@
+web_app_with_database_infra/
+├── .gitignore
+├── README.md
+├── ARCHITECTURE.md
+├── PROJECT_STRUCTURE.txt
+│
+├── env/
+│   ├── dev/
+│   │   ├── main.tf
+│   │   ├── variables.tf
+│   │   ├── outputs.tf
+│   │   ├── providers.tf
+│   │   ├── backend.tf
+│   │   └── terraform.tfvars
+│   │
+│   ├── stage/
+│   │   ├── main.tf
+│   │   ├── variables.tf
+│   │   ├── outputs.tf
+│   │   ├── providers.tf
+│   │   ├── backend.tf
+│   │   └── terraform.tfvars
+│   │
+│   └── prod/
+│       ├── main.tf
+│       ├── variables.tf
+│       ├── outputs.tf
+│       ├── providers.tf
+│       ├── backend.tf
+│       └── terraform.tfvars
+│
+└── modules/
+    ├── compute/
+    │   ├── main.tf
+    │   ├── variables.tf
+    │   ├── output.tf
+    │   └── README.md
+    │
+    ├── database/
+    │   ├── main.tf
+    │   ├── variables.tf
+    │   ├── outputs.tf
+    │   └── README.md
+    │
+    ├── networking/
+    │   ├── main.tf
+    │   ├── variables.tf
+    │   ├── outputs.tf
+    │   └── README.md
+    │
+    └── security/
+        ├── main.tf
+        ├── variables.tf
+        ├── outputs.tf
+        └── README.md
