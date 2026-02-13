@@ -8,6 +8,8 @@ resource "azurerm_service_plan" "serveplan" {
     sku_name = "P1v2"
     }
 
+    
+
 
     resource "azurerm_linux_web_app" "webapp" {
       name                = "${var.project_name}-webapp-${var.environment}"
@@ -34,6 +36,13 @@ resource "azurerm_service_plan" "serveplan" {
             "WEBSITES_PORT" = "3000"
         }
 
+    }
+
+    // role assignment for app service to access mssql server
+    resource "azurerm_role_assignment" "appservice_mssql_access" {
+      scope                = azurerm_mssql_server.mssqlsrv.id
+      role_definition_name = "Contributor"
+      principal_id         = azurerm_linux_web_app.webapp.identity.principal_id
     }
 
     resource "azurerm_linux_web_app_slot" "blue" {
