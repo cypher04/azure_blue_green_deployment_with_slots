@@ -8,7 +8,7 @@ data "azurerm_client_config" "current" {
 }
 
 resource "azurerm_storage_account" "state_storage" {
-  name                     = "${var.project_name}state${var.environment}-bg"
+  name                     = "${var.project_name}state${var.environment}bg"
   resource_group_name      = azurerm_resource_group.state_rg.name
   location                 = var.location
   account_tier             = "Standard"
