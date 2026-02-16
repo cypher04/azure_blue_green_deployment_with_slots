@@ -32,7 +32,7 @@ resource "azurerm_service_plan" "serveplan" {
 
         app_settings = {
             "WEBSITES_ENABLE_APP_SERVICE_STORAGE" = "false"
-            "DATABASE_URL" = "Server=@Microsoft.KeyVault(SecretUri=${azurerm_key_vault_secret.mssql-server-name.id});Database=@Microsoft.KeyVault(SecretUri=${azurerm_key_vault_secret.mssql-database-name.id});User Id=${var.administrator_login};Password=${var.administrator_password};"
+            "DATABASE_URL" = "Server=@Microsoft.KeyVault(SecretUri=${var.server_id});Database=@Microsoft.KeyVault(SecretUri=${var.database_id});User Id=${var.administrator_login};Password=${var.administrator_password};"
             "WEBSITES_PORT" = "3000"
         }
 
@@ -40,7 +40,7 @@ resource "azurerm_service_plan" "serveplan" {
 
     // role assignment for app service to access mssql server
     resource "azurerm_role_assignment" "appservice_mssql_access" {
-      scope                = azurerm_mssql_server.mssqlsrv.id
+      scope                = var.server_id
       role_definition_name = "Contributor"
       principal_id         = azurerm_linux_web_app.webapp.identity.principal_id
     }
@@ -104,51 +104,4 @@ resource "azurerm_service_plan" "serveplan" {
     }
 
 
-     // create key vault for app service to access database credentials
-    resource "azurerm_key_vault" "kv" {
-        name                = "${var.project_name}-${var.environment}-kv"
-        location            = var.location
-        resource_group_name = var.resource_group.name
-        tenant_id           = azurerm_linux_web_app.webapp.identity[0].tenant_id
-        enabled_for_disk_encryption = true
-        soft_delete_retention_days = 7
-        purge_protection_enabled = true
-        sku_name            = "standard"
-        access_policy {
-            tenant_id = azurerm_linux_web_app.webapp.identity[0].tenant_id
-            object_id = azurerm_linux_web_app.webapp.identity[0].principal_id
     
-            key_permissions = [
-                "get",
-                "list",
-                "set",
-                "delete"
-            ]
-    
-            secret_permissions = [
-                "get",
-                "list",
-                "set",
-                "delete"
-            ]
-    
-            storage_permissions = [
-                "get",
-                "list",
-                "set",
-                "delete"
-            ]
-        }
-    }
-    
-    resource "azurerm_key_vault_secret" "mssql_database_name" {
-        name         = "mssql-database-name"
-        value        = var.database_name
-        key_vault_id = azurerm_key_vault.kv.id
-    }
-
-    resource "azurerm_key_vault_secret" "mssql_server_name" {
-        name         = "mssql-server-name"
-        value        = var.server_name
-        key_vault_id = azurerm_key_vault.kv.id
-    }

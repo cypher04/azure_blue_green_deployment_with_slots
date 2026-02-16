@@ -44,13 +44,13 @@ variable "administrator_password" {
     sensitive   = true
 }
 
-variable "server_name" {
-    description = "The name of the SQL server."
-    type        = string
-}
+# variable "server_name" {
+#     description = "The name of the SQL server."
+#     type        = string
+# }
 
-variable "database_name" {
-    description = "The name of the SQL database."
-    type        = string
-}
+# variable "database_name" {
+#     description = "The name of the SQL database."
+#     type        = string
+# }
 

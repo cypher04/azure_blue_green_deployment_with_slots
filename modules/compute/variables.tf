@@ -45,5 +45,15 @@ variable "administrator_password" {
     sensitive   = true
 }
 
+variable "server_id" {
+    description = "The ID of the SQL server to connect to."
+    type        = string
+}
+
+variable "database_id" {
+    description = "The ID of the SQL database to connect to."
+    type        = string
+}
+
 
 

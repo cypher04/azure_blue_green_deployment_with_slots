@@ -32,3 +32,13 @@ variable "subnet_ids" {
     description = "The IDs of the subnets."
     type        = list(string)
 }
+
+variable "server_name" {
+    description = "The name of the SQL server to connect to."
+    type        = string
+}
+
+variable "database_name" {
+    description = "The name of the SQL database to connect to."
+    type        = string
+}

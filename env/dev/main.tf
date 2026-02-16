@@ -16,8 +16,10 @@ module "compute" {
     subnet_ids          = [module.networking.subnet_ids["web"], module.networking.subnet_ids["app"], module.networking.subnet_ids["database"]]
     administrator_login = var.administrator_login
     administrator_password = var.administrator_password
-    server_name         = var.server_name
-    database_name       = var.database_name
+    server_name         = module.database.server_name
+    database_name       = module.database.database_name
+    server_id           = module.database.server_id
+    database_id         = module.database.database_id
     depends_on = [module.database]
 }
 
@@ -41,6 +43,8 @@ module "security" {
     subnet_prefixes     = var.subnet_prefixes
     public_ip_id        = module.networking.public_ip_id
     subnet_ids          = [module.networking.subnet_ids["web"], module.networking.subnet_ids["app"], module.networking.subnet_ids["database"]]
+    server_name         = module.database.server_name
+    database_name       = module.database.database_name
 
     depends_on = [ module.networking ]
 }
