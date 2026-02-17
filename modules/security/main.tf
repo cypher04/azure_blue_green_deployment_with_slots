@@ -4,12 +4,18 @@
 data "azurerm_client_config" "current" {
 }
 
+# data "azurerm_user_assigned_identity" "uai" {
+#     name                = "${var.project_name}-identity-${var.environment}"
+#     resource_group_name = var.resource_group
+# }
+
 resource "azurerm_application_gateway" "appgw" {
     name                = "${var.project_name}-appgw-${var.environment}"
     location            = var.location
     resource_group_name = var.resource_group
     identity {
-        type = "SystemAssigned"
+        type = "UserAssigned"
+        identity_ids = [var.user_assigned_identity_id]
     }
 
     sku {
@@ -44,8 +50,8 @@ resource "azurerm_application_gateway" "appgw" {
     backend_http_settings {
         name                  = "appgw-backend-https-settings"
         cookie_based_affinity = "Disabled"
-        port                  = 443
-        protocol              = "Https"
+        port                  = 80
+        protocol              = "Http"
         pick_host_name_from_backend_address = false
         probe_name            = "appgw-health-probe"
     }
@@ -54,7 +60,7 @@ resource "azurerm_application_gateway" "appgw" {
         name                           = "appgw-http-listener"
         frontend_ip_configuration_name = "appgw-frontend-ip"
         frontend_port_name             = "frontendPort"
-        protocol                       = "Https"
+        protocol                       = "Http"
     }
 
     request_routing_rule {
@@ -62,12 +68,12 @@ resource "azurerm_application_gateway" "appgw" {
         rule_type                  = "Basic"
         http_listener_name         = "appgw-http-listener"
         backend_address_pool_name  = "appgw-backend-pool"
-        backend_http_settings_name = "appgw-backend-http-settings"
+        backend_http_settings_name = "appgw-backend-https-settings"
     }
 
     probe {
         name                = "appgw-health-probe"
-        protocol            = "Https"
+        protocol            = "Http"
         host                = "localhost"
         path                = "/"
         interval            = 30
@@ -95,7 +101,7 @@ resource "azurerm_web_application_firewall_policy" "webafw" {
         match_conditions {
             match_variables {
                 variable_name = "RemoteAddr"
-                selector      = "RemoteAddr"
+                # selector      = "RemoteAddr"
             }
             operator           = "Contains"
             match_values       = ["BadBot"]
@@ -265,24 +271,24 @@ resource "azurerm_subnet_network_security_group_association" "data_nsg_associati
             object_id =data.azurerm_client_config.current.object_id
     
             key_permissions = [
-                "get",
-                "list",
-                "set",
-                "delete"
+                "Get",
+                "List",
+                # "Set",
+                # "Delete"
             ]
     
             secret_permissions = [
-                "get",
-                "list",
-                "set",
-                "delete"
+                "Get",
+                "List",
+                "Set",
+                "Delete"
             ]
     
             storage_permissions = [
-                "get",
-                "list",
-                "set",
-                "delete"
+                "Get",
+                "List",
+                "Set",
+                "Delete"
             ]
         }
     }

@@ -43,6 +43,7 @@ resource "azurerm_public_ip" "pip" {
   location            = var.location
   resource_group_name = var.resource_group
   allocation_method   = "Static"
+  domain_name_label = "${var.project_name}-dns-${var.environment}-${random_id.server.hex}"
 }
 
 
@@ -66,6 +67,10 @@ resource "azurerm_traffic_manager_profile" "traman" {
         tolerated_number_of_failures = 3
     }
 }
+
+
+// private dns zone for traffic manager profile
+
 
 resource "azurerm_traffic_manager_azure_endpoint" "tramanend" {
     name                = "${var.project_name}-traman-endpoint-${var.environment}"

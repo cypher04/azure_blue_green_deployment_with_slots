@@ -7,6 +7,12 @@ data "azurerm_client_config" "current" {
 
 }
 
+resource "azurerm_user_assigned_identity" "uai" {
+    name                = "${var.project_name}-identity-${var.environment}"
+    resource_group_name = var.resource_group
+    location            = var.location
+}
+
 module "compute" {
     source              = "../../modules/compute"
     project_name        = var.project_name
@@ -45,6 +51,7 @@ module "security" {
     subnet_ids          = [module.networking.subnet_ids["web"], module.networking.subnet_ids["app"], module.networking.subnet_ids["database"]]
     server_name         = module.database.server_name
     database_name       = module.database.database_name
+    user_assigned_identity_id = azurerm_user_assigned_identity.uai.id
 
     depends_on = [ module.networking ]
 }

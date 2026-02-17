@@ -15,6 +15,7 @@ resource "azurerm_application_insights" "app_insights" {
     application_type    = "web"
     internet_ingestion_enabled = false
     internet_query_enabled = false
+    workspace_id = azurerm_log_analytics_workspace.log_analytics.id
 }
 
 

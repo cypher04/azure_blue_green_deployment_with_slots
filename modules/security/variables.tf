@@ -42,3 +42,8 @@ variable "database_name" {
     description = "The name of the SQL database to connect to."
     type        = string
 }
+
+variable "user_assigned_identity_id" {
+    description = "The ID of the user assigned identity."
+    type        = string
+}

@@ -5,7 +5,7 @@ resource "azurerm_service_plan" "serveplan" {
     location            = var.location
     resource_group_name = var.resource_group
     os_type = "Linux"
-    sku_name = "P1v2"
+    sku_name = "I1v2"
     }
 
 
@@ -42,7 +42,7 @@ resource "azurerm_service_plan" "serveplan" {
     resource "azurerm_role_assignment" "appservice_mssql_access" {
       scope                = var.server_id
       role_definition_name = "Contributor"
-      principal_id         = azurerm_linux_web_app.webapp.identity.principal_id
+      principal_id         = azurerm_linux_web_app.webapp.identity[0].principal_id
     }
 
     resource "azurerm_linux_web_app_slot" "blue" {

@@ -35,14 +35,14 @@ resource "azurerm_mssql_database" "mssqldb" {
     }
 
     lifecycle {
-      prevent_destroy = true
+      prevent_destroy = false
     }
 }
 
-resource "azurerm_mssql_virtual_network_rule" "name" {
-    name                = "${var.project_name}-vnetrule-${var.environment}"
-    server_id           = azurerm_mssql_server.mssqlsrv.id
-    subnet_id           = var.subnet_ids[2]
-}
+# resource "azurerm_mssql_virtual_network_rule" "name" {
+#     name                = "${var.project_name}-vnetrule-${var.environment}"
+#     server_id           = azurerm_mssql_server.mssqlsrv.id
+#     subnet_id           = var.subnet_ids[2]
+# }
 
 
