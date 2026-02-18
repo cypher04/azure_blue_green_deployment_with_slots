@@ -15,7 +15,7 @@ resource "azurerm_storage_account" "state_storage" {
   account_replication_type = "LRS"
 
     lifecycle {
-        prevent_destroy = true
+        prevent_destroy = false
     }
 
     min_tls_version = "TLS1_2"
