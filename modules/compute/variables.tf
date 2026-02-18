@@ -55,5 +55,10 @@ variable "database_id" {
     type        = string
 }
 
+variable "user_assigned_identity_id" {
+    description = "The ID of the user assigned identity."
+    type        = string
+}
+
 
 

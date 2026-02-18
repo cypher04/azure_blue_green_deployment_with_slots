@@ -21,3 +21,8 @@ output "subnet_ids" {
 output "public_ip_id" {
   value = module.networking.public_ip_id
 }
+
+output "user_assigned_identity_id" {
+  value = azurerm_user_assigned_identity.uai.id
+  
+}

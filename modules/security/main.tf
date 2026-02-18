@@ -18,6 +18,8 @@ resource "azurerm_application_gateway" "appgw" {
         identity_ids = [var.user_assigned_identity_id]
     }
 
+    firewall_policy_id = azurerm_web_application_firewall_policy.webafw.id
+
     sku {
         name     = "WAF_v2"
         tier     = "WAF_v2"
@@ -65,6 +67,7 @@ resource "azurerm_application_gateway" "appgw" {
 
     request_routing_rule {
         name                       = "appgw-routing-rule"
+        priority = 9
         rule_type                  = "Basic"
         http_listener_name         = "appgw-http-listener"
         backend_address_pool_name  = "appgw-backend-pool"
@@ -89,28 +92,56 @@ resource "azurerm_application_gateway" "appgw" {
 // Web Application Firewall Policy
 
 resource "azurerm_web_application_firewall_policy" "webafw" {
-    name                = "${var.project_name}-waf-policy-${var.environment}"
+    name                = "${var.project_name}-wafpolicy-${var.environment}"
     location            = var.location
     resource_group_name = var.resource_group
 
-    custom_rules {
-        name      = "BlockBadBots"
-        priority  = 1
-        rule_type = "MatchRule"
+   custom_rules {
+    name      = "Rule1"
+    priority  = 1
+    rule_type = "MatchRule"
 
-        match_conditions {
-            match_variables {
-                variable_name = "RemoteAddr"
-                # selector      = "RemoteAddr"
-            }
-            operator           = "Contains"
-            match_values       = ["BadBot"]
-            negation_condition = false
-            transforms         = []
-        }
+    match_conditions {
+      match_variables {
+        variable_name = "RemoteAddr"
+      }
 
-        action = "Block"
+      operator           = "IPMatch"
+      negation_condition = false
+      match_values       = ["192.168.1.0/24", "10.0.0.0/24"]
     }
+
+    action = "Block"
+  }
+
+  custom_rules {
+    name      = "Rule2"
+    priority  = 2
+    rule_type = "MatchRule"
+
+    match_conditions {
+      match_variables {
+        variable_name = "RemoteAddr"
+      }
+
+      operator           = "IPMatch"
+      negation_condition = false
+      match_values       = ["192.168.1.0/24"]
+    }
+
+    match_conditions {
+      match_variables {
+        variable_name = "RequestHeaders"
+        selector      = "UserAgent"
+      }
+
+      operator           = "Contains"
+      negation_condition = false
+      match_values       = ["Windows"]
+    }
+
+    action = "Block"
+  }
 
     policy_settings {
       enabled = true
@@ -121,9 +152,34 @@ resource "azurerm_web_application_firewall_policy" "webafw" {
     }
 
     managed_rules {
-        managed_rule_set {
+
+        exclusion {
+      match_variable          = "RequestHeaderNames"
+      selector                = "x-company-secret-header"
+      selector_match_operator = "Equals"
+    }
+    exclusion {
+      match_variable          = "RequestCookieNames"
+      selector                = "too-tasty"
+      selector_match_operator = "EndsWith"
+    }
+    managed_rule_set {
             type    = "OWASP"
             version = "3.2"
+    rule_group_override {
+        rule_group_name = "REQUEST-920-PROTOCOL-ENFORCEMENT"
+        rule {
+          id      = "920300"
+          enabled = true
+          action  = "Log"
+        }
+
+        rule {
+          id      = "920440"
+          enabled = true
+          action  = "Block"
+        }
+      }
         }
     }
   
@@ -152,6 +208,19 @@ resource "azurerm_network_security_rule" "allow_http_inbound_web" {
     network_security_group_name = azurerm_network_security_group.web-nsg.name
 }
 
+resource "azurerm_network_security_rule" "allow_appgw_management" {
+    name                        = "Allow-AppGW-Management"
+    priority                    = 200
+    direction                   = "Inbound"
+    access                      = "Allow"
+    protocol                    = "Tcp"
+    source_port_range           = "*"
+    destination_port_range      = "65200-65535"
+    source_address_prefix       = "GatewayManager"
+    destination_address_prefix  = "*"
+    resource_group_name         = var.resource_group
+    network_security_group_name = azurerm_network_security_group.web-nsg.name
+}
 
 
 // app Network Security Group
@@ -267,8 +336,8 @@ resource "azurerm_subnet_network_security_group_association" "data_nsg_associati
         purge_protection_enabled = true
         sku_name            = "standard"
         access_policy {
-            tenant_id = data.azurerm_client_config.current.tenant_id
-            object_id =data.azurerm_client_config.current.object_id
+            tenant_id = var.webapp_tenant_id
+            object_id = var.webapp_principal_id
     
             key_permissions = [
                 "Get",

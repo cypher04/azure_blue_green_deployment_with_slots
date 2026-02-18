@@ -26,6 +26,7 @@ module "compute" {
     database_name       = module.database.database_name
     server_id           = module.database.server_id
     database_id         = module.database.database_id
+    user_assigned_identity_id = azurerm_user_assigned_identity.uai.id
     depends_on = [module.database]
 }
 
@@ -52,6 +53,8 @@ module "security" {
     server_name         = module.database.server_name
     database_name       = module.database.database_name
     user_assigned_identity_id = azurerm_user_assigned_identity.uai.id
+    webapp_tenant_id = module.compute.webapp_tenant_id
+    webapp_principal_id = module.compute.webapp_principal_id
 
     depends_on = [ module.networking ]
 }
