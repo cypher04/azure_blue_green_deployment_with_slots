@@ -327,17 +327,17 @@ resource "azurerm_subnet_network_security_group_association" "data_nsg_associati
 
  // create key vault for app service to access database credentials
     resource "azurerm_key_vault" "kv" {
-        name                = "${var.project_name}-${var.environment}-kv"
+        name                = "${var.project_name}-${var.environment}-kvbg"
         location            = var.location
         resource_group_name = var.resource_group
-        tenant_id           = data.azurerm_client_config.current.tenant_id
+        tenant_id           = var.user_assigned_identity_tenant_id
         enabled_for_disk_encryption = true
         soft_delete_retention_days = 7
         purge_protection_enabled = true
         sku_name            = "standard"
         access_policy {
-            tenant_id = data.azurerm_client_config.current.tenant_id
-            object_id = data.azurerm_client_config.current.object_id
+            tenant_id = var.user_assigned_identity_tenant_id
+            object_id = var.user_assigned_identity_principal_id
     
             key_permissions = [
                 "Get",
@@ -360,6 +360,18 @@ resource "azurerm_subnet_network_security_group_association" "data_nsg_associati
                 "Delete"
             ]
         }
+
+        access_policy {
+            tenant_id = data.azurerm_client_config.current.tenant_id
+            object_id = data.azurerm_client_config.current.object_id
+
+            secret_permissions = [
+                "Get",
+                "List",
+                "Set",
+                "Delete"
+            ]
+}
     }
     
     resource "azurerm_key_vault_secret" "mssql_database_name" {

@@ -43,13 +43,13 @@ resource "azurerm_service_plan" "serveplan" {
     resource "azurerm_role_assignment" "appservice_mssql_access" {
       scope                = var.server_id
       role_definition_name = "Contributor"
-      principal_id         = azurerm_linux_web_app.webapp.identity[0].principal_id
+      principal_id         = var.user_assigned_identity_principal_id
     }
 
      resource "azurerm_role_assignment" "appservice_keyvault_access" {
       scope                = var.server_id
       role_definition_name = "Key Vault Secrets User"
-      principal_id         = azurerm_linux_web_app.webapp.identity[0].principal_id
+      principal_id         = var.user_assigned_identity_principal_id
     }
 
     resource "azurerm_linux_web_app_slot" "blue" {

@@ -48,15 +48,31 @@ variable "user_assigned_identity_id" {
     type        = string
 }
 
-variable "webapp_tenant_id" {
-    description = "The tenant ID of the web app's managed identity."
+variable "user_assigned_identity_tenant_id" {
+    description = "The tenant ID of the user assigned identity."
     type        = string
 }
 
-variable "webapp_principal_id" {
-    description = "The principal ID of the web app's managed identity."
+variable "user_assigned_identity_principal_id" {
+    description = "The principal ID of the user assigned identity."
     type        = string
 }
+
+# variable "user_assigned_identity_object_id" {
+#     description = "The object ID of the user assigned identity."
+#     type        = string
+# }
+
+
+# variable "webapp_tenant_id" {
+#     description = "The tenant ID of the web app's managed identity."
+#     type        = string
+# }
+
+# variable "webapp_principal_id" {
+#     description = "The principal ID of the web app's managed identity."
+#     type        = string
+# }
 
 # variable "webapp_object_id" {
 #     description = "The object ID of the web app's managed identity."

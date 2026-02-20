@@ -27,8 +27,9 @@ module "compute" {
     server_id           = module.database.server_id
     database_id         = module.database.database_id
     user_assigned_identity_id = azurerm_user_assigned_identity.uai.id
-    webapp_tenant_id = module.compute.webapp_tenant_id
-    webapp_principal_id = module.compute.webapp_principal_id
+    user_assigned_identity_principal_id = azurerm_user_assigned_identity.uai.principal_id
+    # user_assigned_identity_object_id = azurerm_user_assigned_identity.uai.object_id
+    user_assigned_identity_tenant_id = azurerm_user_assigned_identity.uai.tenant_id
     # webapp_object_id = module.compute.webapp_object_id
 
 
@@ -58,8 +59,9 @@ module "security" {
     server_name         = module.database.server_name
     database_name       = module.database.database_name
     user_assigned_identity_id = azurerm_user_assigned_identity.uai.id
-    webapp_tenant_id = module.compute.webapp_tenant_id
-    webapp_principal_id = module.compute.webapp_principal_id
+    user_assigned_identity_principal_id = azurerm_user_assigned_identity.uai.principal_id
+    # user_assigned_identity_object_id = azurerm_user_assigned_identity.uai.object_id
+    user_assigned_identity_tenant_id = azurerm_user_assigned_identity.uai.tenant_id
     # webapp_object_id = module.compute.webapp_object_id
 
     depends_on = [ module.networking, module.compute ]
