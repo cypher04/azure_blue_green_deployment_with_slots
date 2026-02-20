@@ -23,10 +23,15 @@ module "compute" {
     administrator_login = var.administrator_login
     administrator_password = var.administrator_password
     server_name         = module.database.server_name
-    database_name       = module.database.database_name
+    database_name       = module.database.database_name 
     server_id           = module.database.server_id
     database_id         = module.database.database_id
     user_assigned_identity_id = azurerm_user_assigned_identity.uai.id
+    webapp_tenant_id = module.compute.webapp_tenant_id
+    webapp_principal_id = module.compute.webapp_principal_id
+    # webapp_object_id = module.compute.webapp_object_id
+
+
     depends_on = [module.database]
 }
 
@@ -55,8 +60,9 @@ module "security" {
     user_assigned_identity_id = azurerm_user_assigned_identity.uai.id
     webapp_tenant_id = module.compute.webapp_tenant_id
     webapp_principal_id = module.compute.webapp_principal_id
+    # webapp_object_id = module.compute.webapp_object_id
 
-    depends_on = [ module.networking ]
+    depends_on = [ module.networking, module.compute ]
 }
 
 module "database" {

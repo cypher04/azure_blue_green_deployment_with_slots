@@ -336,8 +336,8 @@ resource "azurerm_subnet_network_security_group_association" "data_nsg_associati
         purge_protection_enabled = true
         sku_name            = "standard"
         access_policy {
-            tenant_id = var.webapp_tenant_id
-            object_id = var.webapp_principal_id
+            tenant_id = data.azurerm_client_config.current.tenant_id
+            object_id = data.azurerm_client_config.current.object_id
     
             key_permissions = [
                 "Get",

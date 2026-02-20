@@ -57,3 +57,8 @@ variable "webapp_principal_id" {
     description = "The principal ID of the web app's managed identity."
     type        = string
 }
+
+# variable "webapp_object_id" {
+#     description = "The object ID of the web app's managed identity."
+#     type        = string
+# }

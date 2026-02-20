@@ -28,6 +28,18 @@ resource "azurerm_subnet" "app" {
     resource_group_name  = var.resource_group
     virtual_network_name = azurerm_virtual_network.vnet.name
     address_prefixes     = [var.subnet_prefixes["app"]]
+
+    delegation {
+        name = "appservice-delegation"
+
+        service_delegation {
+            name = "Microsoft.Web/serverFarms"
+
+            actions = [
+                "Microsoft.Network/virtualNetworks/subnets/action",
+            ]
+        }
+    }
 }
 
 resource "azurerm_subnet" "database" {

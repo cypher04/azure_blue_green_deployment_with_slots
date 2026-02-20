@@ -97,7 +97,7 @@ resource "azurerm_service_plan" "serveplan" {
     resource "azurerm_app_service_slot_virtual_network_swift_connection" "asvnet-conn-blue" {
       
       slot_name = azurerm_linux_web_app_slot.blue.name
-      app_service_id = azurerm_linux_web_app_slot.blue.id
+      app_service_id = azurerm_linux_web_app.webapp.id
       subnet_id           = var.subnet_ids["1"]
 
     }
@@ -105,7 +105,7 @@ resource "azurerm_service_plan" "serveplan" {
     resource "azurerm_app_service_slot_virtual_network_swift_connection" "asvnet-conn-green" {
       
       slot_name = azurerm_linux_web_app_slot.green.name
-      app_service_id = azurerm_linux_web_app_slot.green.id
+      app_service_id = azurerm_linux_web_app.webapp.id
       subnet_id           = var.subnet_ids["1"]
 
     }

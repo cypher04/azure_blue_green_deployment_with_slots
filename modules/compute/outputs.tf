@@ -10,6 +10,10 @@ output "webapp_tenant_id" {
     value = azurerm_linux_web_app.webapp.identity[0].tenant_id
 }
 
+# output "webapp_object_id" {
+#     value = azurerm_linux_web_app.webapp.identity[0].object_id
+# }
+
 output "webapp_principal_id" {
     value = azurerm_linux_web_app.webapp.identity[0].principal_id
 }
