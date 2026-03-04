@@ -53,6 +53,7 @@ module "security" {
     environment         = var.environment
     location            = var.location
     resource_group = azurerm_resource_group.name.name
+    fqdn                = module.compute.fqdn
     subnet_prefixes     = var.subnet_prefixes
     public_ip_id        = module.networking.public_ip_id
     subnet_ids          = [module.networking.subnet_ids["web"], module.networking.subnet_ids["app"], module.networking.subnet_ids["database"]]
@@ -85,4 +86,62 @@ module "monitoring" {
     environment         = var.environment
     location            = var.location
     resource_group_name = azurerm_resource_group.name.name
+}
+
+
+
+// create a private endpoint and dns zone for the sql server
+
+resource "azurerm_private_endpoint" "pe-sql" {
+    name                = "${var.project_name}-pe-sql-${var.environment}"
+    location            = var.location
+    resource_group_name = azurerm_resource_group.name.name
+    subnet_id           = module.networking.subnet_ids["database"]
+
+    private_service_connection {
+        name                           = "${var.project_name}-psc-sql-${var.environment}"
+        is_manual_connection            = false
+        private_connection_resource_id  = module.database.server_id
+        subresource_names               = ["sqlServer"]
+    }
+
+    private_dns_zone_group {
+        name                 = "${var.project_name}-pdz-sql-${var.environment}"
+        private_dns_zone_ids = [azurerm_private_dns_zone.sql_private_dns_zone.id]
+    }
+  
+}
+
+resource "azurerm_private_dns_zone" "sql_private_dns_zone" {
+    name                = "privatelink.database.windows.net"
+    resource_group_name = azurerm_resource_group.name.name
+
+}
+
+
+// create a private endpoint and dns zone for the web app
+
+resource "azurerm_private_dns_zone" "webapp_private_dns_zone" {
+    name                = "privatelink.azurewebsites.net"
+    resource_group_name = azurerm_resource_group.name.name
+
+}
+
+resource "azurerm_private_endpoint" "pe-webapp" {
+    name                = "${var.project_name}-pe-webapp-${var.environment}"
+    location            = var.location
+    resource_group_name = azurerm_resource_group.name.name
+    subnet_id           = module.networking.subnet_ids["web"]
+
+    private_service_connection {
+        name                           = "${var.project_name}-psc-webapp-${var.environment}"
+        is_manual_connection            = false
+        private_connection_resource_id  = module.compute.webapp_id
+        subresource_names               = ["sites"]
+    }
+
+    private_dns_zone_group {
+        name                 = "${var.project_name}-pdz-webapp-${var.environment}"
+        private_dns_zone_ids = [azurerm_private_dns_zone.webapp_private_dns_zone.id]
+    }
 }

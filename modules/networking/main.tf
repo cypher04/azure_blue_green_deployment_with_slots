@@ -23,6 +23,14 @@ resource "azurerm_subnet" "web" {
     address_prefixes     = [var.subnet_prefixes["web"]]
 }
 
+resource "azurerm_subnet" "appgw" {
+    name                 = "${var.project_name}-subnet-appgw-${var.environment}"
+    resource_group_name  = var.resource_group
+    virtual_network_name = azurerm_virtual_network.vnet.name
+    address_prefixes     = [var.subnet_prefixes["appgw"]]
+  
+}
+
 resource "azurerm_subnet" "app" {
     name                 = "${var.project_name}-subnet-app-${var.environment}"
     resource_group_name  = var.resource_group

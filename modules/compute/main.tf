@@ -33,7 +33,7 @@ resource "azurerm_service_plan" "serveplan" {
 
         app_settings = {
             "WEBSITES_ENABLE_APP_SERVICE_STORAGE" = "false"
-            "DATABASE_URL" = "Server=@Microsoft.KeyVault(SecretUri=${var.server_id});Database=@Microsoft.KeyVault(SecretUri=${var.database_id});User Id=${var.administrator_login};Password=${var.administrator_password};"
+            "DATABASE_URL" = "Server=@Microsoft.KeyVault(SecretUri=${var.server_name});Database=@Microsoft.KeyVault(SecretUri=${var.database_name});User Id=${var.administrator_login};Password=${var.administrator_password};"
             "WEBSITES_PORT" = "3000"
         }
 

@@ -25,6 +25,8 @@ resource "azurerm_application_gateway" "appgw" {
         tier     = "WAF_v2"
     }
 
+    
+
     autoscale_configuration {
       min_capacity = 2
       max_capacity = 5
@@ -32,7 +34,7 @@ resource "azurerm_application_gateway" "appgw" {
 
     gateway_ip_configuration {
         name      = "appgw-ip-config"
-        subnet_id = var.subnet_ids["0"]
+        subnet_id = var.subnet_ids["3"]
     }
 
     frontend_port {
@@ -47,10 +49,11 @@ resource "azurerm_application_gateway" "appgw" {
 
     backend_address_pool {
         name = "appgw-backend-pool"
+        fqdns = [var.fqdn]
     }
 
     backend_http_settings {
-        name                  = "appgw-backend-https-settings"
+        name                  = "appgw-backend-http-settings"
         cookie_based_affinity = "Disabled"
         port                  = 80
         protocol              = "Http"
@@ -71,7 +74,7 @@ resource "azurerm_application_gateway" "appgw" {
         rule_type                  = "Basic"
         http_listener_name         = "appgw-http-listener"
         backend_address_pool_name  = "appgw-backend-pool"
-        backend_http_settings_name = "appgw-backend-https-settings"
+        backend_http_settings_name = "appgw-backend-http-settings"
     }
 
     probe {
@@ -350,7 +353,10 @@ resource "azurerm_subnet_network_security_group_association" "data_nsg_associati
                 "Get",
                 "List",
                 "Set",
-                "Delete"
+                "Delete",
+                "Purge",
+                "Recover"
+
             ]
     
             storage_permissions = [
@@ -369,7 +375,9 @@ resource "azurerm_subnet_network_security_group_association" "data_nsg_associati
                 "Get",
                 "List",
                 "Set",
-                "Delete"
+                "Delete",
+                "Purge",
+                "Recover"
             ]
 }
     }

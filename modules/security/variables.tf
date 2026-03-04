@@ -78,3 +78,8 @@ variable "user_assigned_identity_principal_id" {
 #     description = "The object ID of the web app's managed identity."
 #     type        = string
 # }
+
+variable "fqdn" {
+    description = "The fully qualified domain name of the web app."
+    type        = string
+}
