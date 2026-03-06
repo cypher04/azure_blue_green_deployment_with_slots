@@ -5,8 +5,8 @@ resource "azurerm_mssql_server" "mssqlsrv" {
     version                      = "12.0"
     administrator_login          = var.administrator_login
     administrator_login_password = var.administrator_password
-    minimum_tls_version = "1.2"
-    public_network_access_enabled = false
+    # minimum_tls_version = "1.2"
+    public_network_access_enabled = true
 
 
     identity {

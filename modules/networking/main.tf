@@ -36,6 +36,7 @@ resource "azurerm_subnet" "app" {
     resource_group_name  = var.resource_group
     virtual_network_name = azurerm_virtual_network.vnet.name
     address_prefixes     = [var.subnet_prefixes["app"]]
+    service_endpoints = ["Microsoft.KeyVault", "Microsoft.Sql"]
 
     delegation {
         name = "appservice-delegation"

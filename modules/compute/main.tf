@@ -16,25 +16,33 @@ resource "azurerm_service_plan" "serveplan" {
       location            = var.location
       resource_group_name = var.resource_group
       service_plan_id     = azurerm_service_plan.serveplan.id
-      client_certificate_enabled = true
-      client_certificate_mode = "Required"
+      key_vault_reference_identity_id = var.user_assigned_identity_id
+      # client_certificate_enabled = true
+      # client_certificate_mode = "Required"
 
 
       identity {
         type = "UserAssigned"
         identity_ids = [var.user_assigned_identity_id]
       }
-      auth_settings {
-        enabled = true
-        unauthenticated_client_action = "RedirectToLoginPage"
+      # auth_settings {
+      #   enabled = true
+      #   unauthenticated_client_action = "RedirectToLoginPage"
+      # }
+
+      site_config {
+        application_stack {
+        node_version = "20-lts"
+  } 
+        vnet_route_all_enabled = "1"
       }
 
-      site_config {}
-
         app_settings = {
-            "WEBSITES_ENABLE_APP_SERVICE_STORAGE" = "false"
-            "DATABASE_URL" = "Server=@Microsoft.KeyVault(SecretUri=${var.server_name});Database=@Microsoft.KeyVault(SecretUri=${var.database_name});User Id=${var.administrator_login};Password=${var.administrator_password};"
+            "WEBSITES_ENABLE_APP_SERVICE_STORAGE" = "true"
+            "DATABASE_URL" = "Server=${var.server_name}.database.windows.net;Database=${var.database_name};User Id=${var.administrator_login};Password=${var.administrator_password};"
             "WEBSITES_PORT" = "3000"
+            "SCM_DO_BUILD_DURING_DEPLOYMENT" = "true"
+            
         }
 
     }
@@ -55,10 +63,10 @@ resource "azurerm_service_plan" "serveplan" {
     resource "azurerm_linux_web_app_slot" "blue" {
       name                = "${var.project_name}-webapp-staging-${var.environment}"
       app_service_id   = azurerm_linux_web_app.webapp.id
-      auth_settings {
-        enabled = true
-        unauthenticated_client_action = "RedirectToLoginPage"
-      }
+      # auth_settings {
+      #   enabled = true
+      #   unauthenticated_client_action = "RedirectToLoginPage"
+      # }
 
       site_config {
 
@@ -70,10 +78,10 @@ resource "azurerm_service_plan" "serveplan" {
     resource "azurerm_linux_web_app_slot" "green" {
       name                = "${var.project_name}-webapp-staging2-${var.environment}"
       app_service_id   = azurerm_linux_web_app.webapp.id
-      auth_settings {
-        enabled = true
-        unauthenticated_client_action = "RedirectToLoginPage"
-      }
+      # auth_settings {
+      #   enabled = true
+      #   unauthenticated_client_action = "RedirectToLoginPage"
+      # }
       
       site_config {
 

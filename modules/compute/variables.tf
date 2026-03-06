@@ -70,6 +70,11 @@ variable "user_assigned_identity_principal_id" {
     type        = string
 }
 
+
+variable "keyvault_name" {
+    description = "The name of the Key Vault to retrieve secrets from."
+}
+
 # variable "user_assigned_identity_object_id" {
 #     description = "The object ID of the user assigned identity."
 #     type        = string

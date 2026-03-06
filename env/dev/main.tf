@@ -11,6 +11,8 @@ resource "azurerm_user_assigned_identity" "uai" {
     name                = "${var.project_name}-identity-${var.environment}"
     resource_group_name = var.resource_group
     location            = var.location
+
+    depends_on = [ azurerm_resource_group.name ]
 }
 
 module "compute" {
@@ -27,6 +29,7 @@ module "compute" {
     server_id           = module.database.server_id
     database_id         = module.database.database_id
     user_assigned_identity_id = azurerm_user_assigned_identity.uai.id
+    keyvault_name = module.security.keyvault_name
     user_assigned_identity_principal_id = azurerm_user_assigned_identity.uai.principal_id
     # user_assigned_identity_object_id = azurerm_user_assigned_identity.uai.object_id
     user_assigned_identity_tenant_id = azurerm_user_assigned_identity.uai.tenant_id
@@ -56,7 +59,7 @@ module "security" {
     fqdn                = module.compute.fqdn
     subnet_prefixes     = var.subnet_prefixes
     public_ip_id        = module.networking.public_ip_id
-    subnet_ids          = [module.networking.subnet_ids["web"], module.networking.subnet_ids["app"], module.networking.subnet_ids["database"]]
+    subnet_ids          = [module.networking.subnet_ids["web"], module.networking.subnet_ids["app"], module.networking.subnet_ids["database"], module.networking.subnet_ids["appgw"]]
     server_name         = module.database.server_name
     database_name       = module.database.database_name
     user_assigned_identity_id = azurerm_user_assigned_identity.uai.id
@@ -65,7 +68,7 @@ module "security" {
     user_assigned_identity_tenant_id = azurerm_user_assigned_identity.uai.tenant_id
     # webapp_object_id = module.compute.webapp_object_id
 
-    depends_on = [ module.networking, module.compute ]
+    depends_on = [ module.networking]
 }
 
 module "database" {
@@ -112,6 +115,14 @@ resource "azurerm_private_endpoint" "pe-sql" {
   
 }
 
+resource "azurerm_private_dns_zone_virtual_network_link" "sql_dns_zone_link" {
+    name                  = "${var.project_name}-dns-link-sql-${var.environment}"
+    resource_group_name   = azurerm_resource_group.name.name
+    private_dns_zone_name = azurerm_private_dns_zone.sql_private_dns_zone.name
+    virtual_network_id    = module.networking.vnet_id
+  
+}
+
 resource "azurerm_private_dns_zone" "sql_private_dns_zone" {
     name                = "privatelink.database.windows.net"
     resource_group_name = azurerm_resource_group.name.name
@@ -144,4 +155,12 @@ resource "azurerm_private_endpoint" "pe-webapp" {
         name                 = "${var.project_name}-pdz-webapp-${var.environment}"
         private_dns_zone_ids = [azurerm_private_dns_zone.webapp_private_dns_zone.id]
     }
+}
+
+resource "azurerm_private_dns_zone_virtual_network_link" "webapp_dns_zone_link" {
+    name                  = "${var.project_name}-dns-link-webapp-${var.environment}"
+    resource_group_name   = azurerm_resource_group.name.name
+    private_dns_zone_name = azurerm_private_dns_zone.webapp_private_dns_zone.name
+    virtual_network_id    = module.networking.vnet_id
+  
 }

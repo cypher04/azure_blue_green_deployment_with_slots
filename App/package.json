@@ -1,7 +1,22 @@
 {
-  "name": "terraform-azure-app",
+  "name": "webapp-with-database",
   "version": "1.0.0",
+  "description": "Simple Node.js web app with MSSQL database for Azure App Service",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js"
+  },
   "dependencies": {
-    "express": "^4.18.2"
+    "dotenv": "^16.3.1",
+    "ejs": "^3.1.9",
+    "express": "^4.18.2",
+    "mssql": "^10.0.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.2"
+  },
+  "engines": {
+    "node": ">=20.0.0"
   }
 }
