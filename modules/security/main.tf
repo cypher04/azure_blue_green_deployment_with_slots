@@ -4,10 +4,10 @@
 data "azurerm_client_config" "current" {
 }
 
-# data "azurerm_user_assigned_identity" "uai" {
-#     name                = "${var.project_name}-identity-${var.environment}"
-#     resource_group_name = var.resource_group
-# }
+data "azurerm_user_assigned_identity" "uai" {
+    name                = "${var.project_name}-identity-${var.environment}"
+    resource_group_name = var.resource_group
+}
 
 resource "azurerm_application_gateway" "appgw" {
     name                = "${var.project_name}-appgw-${var.environment}"
@@ -36,7 +36,6 @@ resource "azurerm_application_gateway" "appgw" {
         name      = "appgw-ip-config"
         subnet_id = var.subnet_ids["3"]
     }
-
     frontend_port {
         name = "frontendPort"
         port = 80
@@ -196,7 +195,7 @@ resource "azurerm_network_security_group" "web-nsg" {
     resource_group_name = var.resource_group
 }
 
-// Security Rules
+# // Security Rules
 resource "azurerm_network_security_rule" "allow_http_inbound_web" {
     name                        = "Allow-https-Inbound-web"
     priority                    = 100
@@ -280,26 +279,26 @@ resource "azurerm_network_security_rule" "allow_https_inbound_data" {
     access                      = "Allow"
     protocol                    = "Tcp"
     source_port_range           = "*"
-    destination_port_range      = "443"
-    source_address_prefix       = "*"
+    destination_port_range      = "1433"
+    source_address_prefix       = var.subnet_prefixes["app"]
     destination_address_prefix  = "*"
     resource_group_name = var.resource_group
     network_security_group_name = azurerm_network_security_group.data-nsg.name
 }
 
-resource "azurerm_network_security_rule" "allow_https_outbound_data" {
-    name                        = "Allow-https-Outbound-data"
-    priority                    = 110
-    direction                   = "Outbound"
-    access                      = "Allow"
-    protocol                    = "Tcp"
-    source_port_range           = "*"
-    destination_port_range      = "443"
-    source_address_prefix       = "*"
-    destination_address_prefix  = "*"
-    resource_group_name = var.resource_group
-    network_security_group_name = azurerm_network_security_group.data-nsg.name
-}
+# resource "azurerm_network_security_rule" "allow_https_outbound_data" {
+#     name                        = "Allow-https-Outbound-data"
+#     priority                    = 110
+#     direction                   = "Outbound"
+#     access                      = "Allow"
+#     protocol                    = "Tcp"
+#     source_port_range           = "*"
+#     destination_port_range      = "443"
+#     source_address_prefix       = "*"
+#     destination_address_prefix  = "*"
+#     resource_group_name = var.resource_group
+#     network_security_group_name = azurerm_network_security_group.data-nsg.name
+# }
 
 
 
@@ -310,7 +309,7 @@ resource "azurerm_network_security_rule" "allow_https_outbound_data" {
 
 
 
-// Associate NSG to Subnets
+# // Associate NSG to Subnets
 resource "azurerm_subnet_network_security_group_association" "web_nsg_association" {
     subnet_id                 = var.subnet_ids[0]
     network_security_group_id = azurerm_network_security_group.web-nsg.id

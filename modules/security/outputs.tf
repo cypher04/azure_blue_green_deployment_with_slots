@@ -22,3 +22,7 @@ output "firewall_id" {
 # output "uai_tenant_id" {
 #     value = data.azurerm_user_assigned_identity.uai.tenant_id
 # }
+
+output "keyvault_name" {
+    value = azurerm_key_vault.kv.name
+}
