@@ -1,645 +1,274 @@
-# Blue-Green Deployment with Deployment Slots Architecture
+# Architecture
 
-## 📋 Overview
+Every resource described here is defined in [env/dev/main.tf](env/dev/main.tf) or in one of the five modules it calls. Names use the `dev` values from `terraform.tfvars`: `project_name = "bluegreen"`, `environment = "dev"`, `location = "West Europe"`.
 
-This architecture implements a **Blue-Green deployment strategy** using Azure App Service deployment slots with **Azure Traffic Manager** for intelligent traffic routing, enabling zero-downtime deployments with instant rollback capabilities. The infrastructure is secured with Web Application Firewall (WAF) and includes a multi-tier architecture with separate subnets for web, application, and database layers.
-
-### Key Features
-- **Active Slot Management**: Automated active slot designation with `azurerm_web_app_active_slot`
-- **Traffic Manager**: Priority-based routing with health monitoring
-- **Zero-Downtime Deployments**: Seamless slot swapping with instant rollback
-- **WAF Protection**: OWASP 3.2 rules with custom bot protection
-- **Multi-tier Security**: Network isolation with dedicated subnets and NSG rules
-
-## 🏗️ High-Level Architecture
+## Topology
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                         Resource Group                              │
-│                                                                     │
-│  ┌──────────────────────────────────────────────────────────────┐  │
-│  │                    Virtual Network (10.0.0.0/16)             │  │
-│  │                                                              │  │
-│  │  ┌────────────────────────────────────────────────────────┐ │  │
-│  │  │  Web Subnet (10.0.1.0/24)                             │ │  │
-│  │  │  • Application Gateway (WAF_v2)                       │ │  │
-│  │  │    - Min Capacity: 2, Max Capacity: 5                │ │  │
-│  │  │    - WAF Policy (OWASP 3.2)                          │ │  │
-│  │  └────────────────────────────────────────────────────────┘ │  │
-│  │                           ↓                                  │  │
-│  │  ┌────────────────────────────────────────────────────────┐ │  │
-│  │  │  App Subnet (10.0.2.0/24)                             │ │  │
-│  │  │  • App Service Plan (P1v2)                            │ │  │
-│  │  │  • Production Web App                                 │ │  │
-│  │  │    ├─ Blue Slot (staging)                            │ │  │
-│  │  │    └─ Green Slot (staging2)                          │ │  │
-│  │  │  • VNet Integration (All Slots)                       │ │  │
-│  │  └────────────────────────────────────────────────────────┘ │  │
-│  │                           ↓                                  │  │
-│  │  ┌────────────────────────────────────────────────────────┐ │  │
-│  │  │  Database Subnet (10.0.3.0/24)                        │ │  │
-│  │  │  • MSSQL Server (v12.0)                               │ │  │
-│  │  │  • MSSQL Database (S0, 10GB)                          │ │  │
-│  │  │  • VNet Rule (DB Subnet only)                         │ │  │
-│  │  └────────────────────────────────────────────────────────┘ │  │
-│  │                                                              │  │
-│  └──────────────────────────────────────────────────────────────┘  │
-│                                                                     │
-│  ┌──────────────────────────────────────────────────────────────┐  │
-│  │  Public IP (Static)                                          │  │
-│  │  • Connected to Application Gateway                          │  │
-│  │  • Connected to Traffic Manager Endpoint                     │  │
-│  └──────────────────────────────────────────────────────────────┘  │
-│                                                                     │
-│  ┌──────────────────────────────────────────────────────────────┐  │
-│  │  Traffic Manager Profile                                     │  │
-│  │  • Routing Method: Priority                                  │  │
-│  │  • DNS: {project}-tm-{env}.trafficmanager.net               │  │
-│  │  • Health Monitoring: HTTPS:443 every 30s                   │  │
-│  │  • TTL: 100 seconds                                          │  │
-│  │  • Endpoint: Public IP (Weight: 100, Always Serve)          │  │
-│  └──────────────────────────────────────────────────────────────┘  │
-│                                                                     │
-│  ┌──────────────────────────────────────────────────────────────┐  │
-│  │  Network Security Groups                                     │  │
-│  │  • Web NSG (HTTPS:443 allowed)                              │  │
-│  │  • App NSG (HTTPS:443 in/out allowed)                       │  │
-│  │  • Database NSG (HTTPS:443 in/out allowed)                  │  │
-│  └──────────────────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────────────┘
+                            Internet
+                                │
+                ┌───────────────┴───────────────┐
+                │                               │
+     bluegreen-tm-dev                  bluegreen-dns-dev-<hex>
+     .trafficmanager.net               .westeurope.cloudapp.azure.com
+     (Traffic Manager, Priority)       (Static Public IP)
+                │                               │
+                │                    Application Gateway WAF_v2
+                │                    bluegreen-appgw-dev
+                │                    listener HTTP:80 → backend HTTP:80
+                │                               │
+                │                    backend pool = production
+                │                    web app default hostname
+                │                               │
+     target = blue slot ──────────────────────► │
+                                                │
+ ┌──────────────────────────────────────────────┼─────────────────────────┐
+ │  VNet  bluegreen-vnet-dev  10.0.0.0/16       │                         │
+ │                                              │                         │
+ │  appgw subnet 10.0.4.0/24 ───────────────────┘                         │
+ │     Application Gateway instances (autoscale 2–5)                      │
+ │                                                                        │
+ │  web subnet 10.0.1.0/24            [NSG bluegreen-nsg-dev]             │
+ │     Private endpoint  bluegreen-pe-webapp-dev  (sites)                 │
+ │                                                                        │
+ │  app subnet 10.0.2.0/24            [NSG bluegreen-app-nsg-dev]         │
+ │     delegation: Microsoft.Web/serverFarms                              │
+ │     service endpoints: Microsoft.KeyVault, Microsoft.Sql               │
+ │     App Service Plan  bluegreen-asp-dev  (Linux, P1v3)                 │
+ │       ├─ bluegreen-webapp-dev             (production)                 │
+ │       ├─ bluegreen-webapp-staging-dev     (blue,  active slot)         │
+ │       └─ bluegreen-webapp-staging2-dev    (green)                      │
+ │     all three swift-integrated into this subnet                        │
+ │                                                                        │
+ │  database subnet 10.0.3.0/24       [NSG bluegreen-nsg-dev]             │
+ │     Private endpoint  bluegreen-pe-sql-dev  (sqlServer)                │
+ └────────────────────────────────────────────────────────────────────────┘
+
+  Private DNS zones linked to the VNet
+    privatelink.azurewebsites.net    ← bluegreen-dns-link-webapp-dev
+    privatelink.database.windows.net ← bluegreen-dns-link-sql-dev
+
+  Outside the VNet
+    bluegreen-mssqlsrv-dev / bluegreen-mssqldb-dev   (S0, 10 GB)
+    bluegreen-dev-kvbg                                (Key Vault)
+    bluegreen-identity-dev                            (User-assigned identity)
+    bluegreen-loganalytics-dev + bluegreen-appinsights-dev
 ```
 
-## 🔄 Blue-Green Deployment Flow
+## Root module
+
+[env/dev/main.tf](env/dev/main.tf) creates three things directly, then calls the modules and adds the private networking layer.
+
+| Resource | Detail |
+|---|---|
+| `azurerm_resource_group.name` | `bluegreen-rg-dev` in `West Europe` |
+| `data.azurerm_client_config.current` | Identity running Terraform, used for a Key Vault access policy |
+| `azurerm_user_assigned_identity.uai` | `bluegreen-identity-dev`; its ID, principal ID, and tenant ID are passed to both `compute` and `security` |
+
+### Private endpoints and DNS
+
+| Resource | Subnet | Sub-resource | Zone |
+|---|---|---|---|
+| `azurerm_private_endpoint.pe-sql` | `database` | `sqlServer` | `privatelink.database.windows.net` |
+| `azurerm_private_endpoint.pe-webapp` | `web` | `sites` | `privatelink.azurewebsites.net` |
+
+Both zones get an `azurerm_private_dns_zone_virtual_network_link` to `bluegreen-vnet-dev`, so name resolution for the SQL Server and the web app inside the VNet returns the private endpoint addresses.
+
+### Module wiring
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                 Blue-Green Deployment Workflow                  │
-└─────────────────────────────────────────────────────────────────┘
+azurerm_resource_group ──► every module
+azurerm_user_assigned_identity ──► compute, security
 
-    Initial State:
-    ┌──────────────────────────────────────────────┐
-    │  Production Slot (Live)                      │
-    │  • Version: 1.0                              │
-    │  • Receives 100% traffic                     │
-    └──────────────────────────────────────────────┘
-              ↓
-    ┌──────────────────────────────────────────────┐
-    │  Blue Slot (staging)                         │
-    │  • Idle                                      │
-    └──────────────────────────────────────────────┘
-              ↓
-    ┌──────────────────────────────────────────────┐
-    │  Green Slot (staging2)                       │
-    │  • Idle                                      │
-    └──────────────────────────────────────────────┘
+networking ──► subnet_ids, public_ip_id, vnet_id
+     │
+     ├──► compute   (subnet_ids: web, app, database)
+     ├──► security  (subnet_ids: web, app, database, appgw + public_ip_id)
+     └──► database  (subnet_ids: web, app, database)
 
-    ─────────────────────────────────────────────────
+database ──► compute  (server_name, database_name, server_id, database_id)
+database ──► security (server_name, database_name)
+compute  ──► security (fqdn — becomes the App Gateway backend pool)
+compute  ──► networking (blue_slot_id, green_slot_id)
+security ──► compute  (keyvault_name)
 
-    Deployment Phase:
-    ┌──────────────────────────────────────────────┐
-    │  Production Slot                             │
-    │  • Version: 1.0 (Still Live)                 │
-    │  • Receives 100% traffic                     │
-    └──────────────────────────────────────────────┘
-              ↓
-    ┌──────────────────────────────────────────────┐
-    │  Blue Slot                                   │
-    │  • Deploy Version: 2.0                       │
-    │  • Testing & Validation                      │
-    └──────────────────────────────────────────────┘
-
-    ─────────────────────────────────────────────────
-
-    After Swap (Blue → Production):
-    ┌──────────────────────────────────────────────┐
-    │  Production Slot                             │
-    │  • Version: 2.0 (Now Live)                   │
-    │  • Receives 100% traffic                     │
-    └──────────────────────────────────────────────┘
-              ↓
-    ┌──────────────────────────────────────────────┐
-    │  Blue Slot                                   │
-    │  • Version: 1.0 (Previous Production)        │
-    │  • Available for Instant Rollback            │
-    └──────────────────────────────────────────────┘
-
-    ─────────────────────────────────────────────────
-
-    Next Deployment Cycle (Use Green):
-    ┌──────────────────────────────────────────────┐
-    │  Production Slot                             │
-    │  • Version: 2.0 (Live)                       │
-    │  • Receives 100% traffic                     │
-    └──────────────────────────────────────────────┘
-              ↓
-    ┌──────────────────────────────────────────────┐
-    │  Green Slot                                  │
-    │  • Deploy Version: 3.0                       │
-    │  • Testing & Validation                      │
-    └──────────────────────────────────────────────┘
+monitoring — no inter-module inputs beyond name, location, environment, resource group
 ```
 
-## 🌐 Traffic Flow
+`compute` carries `depends_on = [module.database]` and `security` carries `depends_on = [module.networking]`. The networking module also takes `public_ip_id = module.networking.public_ip_id`, a self-reference that is declared but unused by any resource in the module.
 
-```
-Internet Traffic (DNS Query)
-      ↓
-[Traffic Manager Profile]
-   • DNS: {project}-tm-{env}.trafficmanager.net
-   • Routing: Priority-based
-   • Health Check: HTTPS:443 every 30s
-   • Resolves to: Static Public IP
-      ↓
-[Static Public IP]
-      ↓
-[Application Gateway (WAF_v2)]
-   • Port: 80 (Frontend)
-   • WAF Policy: OWASP 3.2
-   • Health Probe: HTTPS on /
-      ↓
-[Web NSG - Allow HTTPS:443]
-      ↓
-[Backend Pool]
-      ↓
-[Production Web App OR Active Slot]
-   • Port: 443 (Backend)
-   • VNet Integrated
-      ↓
-[App NSG - Allow HTTPS:443]
-      ↓
-[Database Connection]
-   • MSSQL Server via Private Endpoint
-   • Connection String in App Settings
-      ↓
-[Database NSG - Allow HTTPS:443]
-      ↓
-[MSSQL Database]
-   • VNet Rule: Database Subnet Only
-```
+## Networking module
 
-## 📦 Module Architecture
+[modules/networking/main.tf](modules/networking/main.tf)
 
-```
-env/dev/
-   └── main.tf (Root Module)
-         ├── Creates Resource Group
-         ├── Calls Networking Module
-         ├── Calls Database Module
-         ├── Calls Compute Module
-         └── Calls Security Module
+| Resource | Configuration |
+|---|---|
+| `random_id.server` | 4 bytes, `keepers = { azi = 1 }`; supplies the public IP DNS label suffix |
+| `azurerm_virtual_network.vnet` | `bluegreen-vnet-dev`, `10.0.0.0/16` |
+| `azurerm_subnet.web` | `10.0.1.0/24` |
+| `azurerm_subnet.appgw` | `10.0.4.0/24`, holds the Application Gateway |
+| `azurerm_subnet.app` | `10.0.2.0/24`, delegated to `Microsoft.Web/serverFarms` with the `virtualNetworks/subnets/action` action; service endpoints `Microsoft.KeyVault` and `Microsoft.Sql` |
+| `azurerm_subnet.database` | `10.0.3.0/24` |
+| `azurerm_public_ip.pip` | Static, DNS label `bluegreen-dns-dev-<random hex>` |
+| `azurerm_traffic_manager_profile.traman` | `bluegreen-traman-dev`, Enabled, `Priority` routing; DNS relative name `bluegreen-tm-dev`, TTL 100 s; monitor HTTPS:443 on `/`, interval 30 s, timeout 10 s, 3 tolerated failures |
+| `azurerm_traffic_manager_azure_endpoint.tramanend` | `bluegreen-traman-endpoint-dev`, priority 1, `target_resource_id = var.blue_slot_id` |
 
-modules/
-   ├── networking/
-   │     ├── Random ID Generator (Server Naming)
-   │     ├── Virtual Network (10.0.0.0/16)
-   │     ├── Web Subnet (10.0.1.0/24)
-   │     ├── App Subnet (10.0.2.0/24)
-   │     ├── Database Subnet (10.0.3.0/24)
-   │     ├── Public IP (Static)
-   │     └── Traffic Manager Profile
-   │         ├── Routing Method: Priority
-   │         ├── DNS Config (TTL: 100s)
-   │         ├── Health Monitor (HTTPS:443)
-   │         └── Azure Endpoint (Public IP, Weight: 100)
-   │
-   ├── database/
-   │     ├── MSSQL Server (v12.0)
-   │     │   • System Assigned Identity
-   │     │   • TLS 1.2 minimum
-   │     ├── MSSQL Database (S0, 10GB)
-   │     │   • Lifecycle: prevent_destroy
-   │     └── VNet Rule (Database Subnet)
-   │
-   ├── compute/
-   │     ├── App Service Plan (P1v2, Linux)
-   │     ├── Linux Web App (Production)
-   │     │   • App Settings (DB Connection)
-   │     │   • VNet Integration
-   │     ├── Blue Slot (staging)
-   │     │   • VNet Integration
-   │     │   • Designated as Active Slot
-   │     ├── Green Slot (staging2)
-   │     │   • VNet Integration
-   │     └── Active Slot Configuration
-   │         • Points to: Blue Slot (Default)
-   │
-   └── security/
-         ├── Application Gateway (WAF_v2)
-         │   • Autoscaling: 2-5 instances
-         │   • Frontend: HTTP:80
-         │   • Backend: HTTPS:443
-         │   • Health Probe
-         ├── WAF Policy
-         │   • Mode: Prevention
-         │   • OWASP 3.2
-         │   • Custom Rules
-         ├── Web NSG + Rules
-         ├── App NSG + Rules
-         └── Database NSG + Rules
-```
+Outputs: `subnet_ids` (a map keyed `web`, `app`, `database`, `appgw`), `public_ip_id`, `public_ip`, `vnet_id`.
 
-## 🔐 Security Architecture
+## Compute module
 
-### Layer 1: Edge Security
-```
-Public Internet
-      ↓
-[Static Public IP]
-      ↓
-[Application Gateway WAF_v2]
-   • Web Application Firewall (Prevention Mode)
-   • OWASP 3.2 Rule Set
-   • Custom Rules (Block Bad Bots)
-   • Request Body Check: Enabled
-   • File Upload Limit: 100MB
-   • Max Request Size: 128KB
-```
+[modules/compute/main.tf](modules/compute/main.tf)
 
-### Layer 2: Network Security
-```
-[Network Security Groups]
-   ├── Web NSG
-   │   └── Allow HTTPS:443 Inbound
-   │
-   ├── App NSG
-   │   ├── Allow HTTPS:443 Inbound
-   │   └── Allow HTTPS:443 Outbound
-   │
-   └── Database NSG
-       ├── Allow HTTPS:443 Inbound
-       └── Allow HTTPS:443 Outbound
-```
+| Resource | Configuration |
+|---|---|
+| `azurerm_service_plan.serveplan` | `bluegreen-asp-dev`, Linux, `P1v3` |
+| `azurerm_linux_web_app.webapp` | `bluegreen-webapp-dev`; Node `20-lts`; `vnet_route_all_enabled = "1"`; `UserAssigned` identity; `key_vault_reference_identity_id` set to the same identity |
+| `azurerm_linux_web_app_slot.blue` | `bluegreen-webapp-staging-dev`, empty `site_config` |
+| `azurerm_linux_web_app_slot.green` | `bluegreen-webapp-staging2-dev`, empty `site_config` |
+| `azurerm_web_app_active_slot.acive_slot` | `slot_id` = the blue slot |
+| `azurerm_app_service_virtual_network_swift_connection.asvnet-conn-webapp` | Production app → `subnet_ids["1"]` (the `app` subnet) |
+| `azurerm_app_service_slot_virtual_network_swift_connection.asvnet-conn-blue` | Blue slot → `app` subnet |
+| `azurerm_app_service_slot_virtual_network_swift_connection.asvnet-conn-green` | Green slot → `app` subnet |
+| `azurerm_role_assignment.appservice_mssql_access` | `Contributor` for the managed identity, scoped to `server_id` |
+| `azurerm_role_assignment.appservice_keyvault_access` | `Key Vault Secrets User` for the managed identity, scoped to `server_id` |
 
-### Layer 3: Application Security
-```
-[App Service]
-   • VNet Integration (Private Subnet)
-   • Database Connection via Environment Variables
-   • WEBSITES_ENABLE_APP_SERVICE_STORAGE: false
-   • Blue/Green Slots Isolated
-```
+App settings on the production app:
 
-### Layer 4: Data Security
-```
-[MSSQL Server]
-   • Minimum TLS: 1.2
-   • System Assigned Managed Identity
-   • VNet Rule: Database Subnet Only
-   • Encryption: VBS Enclave Type
-   • Lifecycle Protection: prevent_destroy
-```
+| Setting | Value |
+|---|---|
+| `WEBSITES_ENABLE_APP_SERVICE_STORAGE` | `true` |
+| `DATABASE_URL` | `Server=<server>.database.windows.net;Database=<db>;User Id=<login>;Password=<password>;` |
+| `WEBSITES_PORT` | `3000` |
+| `SCM_DO_BUILD_DURING_DEPLOYMENT` | `true` |
 
-## 📊 Resource Naming Convention
+Neither slot declares its own `app_settings`, so both inherit whatever is present after a swap. `client_certificate_enabled`, `client_certificate_mode`, and the `auth_settings` blocks are commented out on the app and both slots.
 
-| Resource Type | Naming Pattern | Example |
-|--------------|----------------|---------|
-| Resource Group | `{project}-rg-{env}` | `bluegreen-rg-dev` |
-| Virtual Network | `{project}-vnet-{env}` | `bluegreen-vnet-dev` |
-| Subnet | `{project}-subnet-{tier}-{env}` | `bluegreen-subnet-web-dev` |
+Outputs: `service_plan_id`, `app_service_id`, `webapp_id`, `fqdn` (the app's `default_hostname`), `webapp_tenant_id`, `webapp_principal_id`, `blue_slot_id`, `green_slot_id`.
+
+## Security module
+
+[modules/security/main.tf](modules/security/main.tf)
+
+### Application Gateway — `bluegreen-appgw-dev`
+
+| Setting | Value |
+|---|---|
+| SKU / tier | `WAF_v2` / `WAF_v2` |
+| Identity | `UserAssigned`, `bluegreen-identity-dev` |
+| Autoscale | min 2, max 5 |
+| Gateway IP config | `subnet_ids["3"]` — the `appgw` subnet |
+| Frontend port | 80 |
+| Frontend IP | The static public IP |
+| Backend pool | `fqdns = [var.fqdn]` — the production web app's default hostname |
+| Backend HTTP settings | Port 80, HTTP, cookie affinity disabled, `pick_host_name_from_backend_address = false` |
+| Listener | HTTP on the frontend IP and port |
+| Routing rule | `Basic`, priority 9, listener → backend pool |
+| Probe | HTTP, host `localhost`, path `/`, interval 30 s, timeout 30 s, unhealthy threshold 3 |
+| Firewall policy | `bluegreen-wafpolicy-dev` |
+
+### WAF policy — `bluegreen-wafpolicy-dev`
+
+Policy settings: enabled, `Prevention` mode, request body check on, 100 MB file upload limit, 128 KB max request body.
+
+Custom rules:
+
+| Rule | Priority | Match | Action |
+|---|---|---|---|
+| `Rule1` | 1 | `RemoteAddr` IPMatch `192.168.1.0/24`, `10.0.0.0/24` | Block |
+| `Rule2` | 2 | `RemoteAddr` IPMatch `192.168.1.0/24` **and** `RequestHeaders:UserAgent` contains `Windows` | Block |
+
+Managed rules: OWASP 3.2, with a `REQUEST-920-PROTOCOL-ENFORCEMENT` group override setting rule `920300` to `Log` and rule `920440` to `Block`. Two exclusions are declared — request header name `x-company-secret-header` (Equals) and request cookie name ending in `too-tasty`.
+
+### Network Security Groups
+
+| Terraform name | Resource name | Associated subnet |
+|---|---|---|
+| `web-nsg` | `bluegreen-nsg-dev` | `subnet_ids[0]` — `web` |
+| `app-nsg` | `bluegreen-app-nsg-dev` | `subnet_ids[1]` — `app` |
+| `data-nsg` | `bluegreen-nsg-dev` | `subnet_ids[2]` — `database` |
+
+Rules:
+
+| NSG | Rule | Priority | Direction | Port | Source |
+|---|---|---|---|---|---|
+| web | `Allow-https-Inbound-web` | 100 | Inbound | 443 | `*` |
+| web | `Allow-AppGW-Management` | 200 | Inbound | 65200-65535 | `GatewayManager` |
+| app | `Allow-https-Inbound-app` | 100 | Inbound | 443 | `*` |
+| app | `Allow-https-Outbound-app` | 110 | Outbound | 443 | `*` |
+| database | `Allow-https-Inbound-data` | 110 | Inbound | 1433 | `subnet_prefixes["app"]` |
+
+A commented-out outbound rule remains in the database NSG block.
+
+### Key Vault — `bluegreen-dev-kvbg`
+
+Standard SKU, tenant taken from the user-assigned identity, `enabled_for_disk_encryption = true`, purge protection enabled, 7-day soft-delete retention.
+
+Two access policies:
+
+- **Managed identity** — keys `Get`/`List`; secrets `Get`, `List`, `Set`, `Delete`, `Purge`, `Recover`; storage `Get`, `List`, `Set`, `Delete`.
+- **Terraform executor** (`data.azurerm_client_config.current`) — secrets `Get`, `List`, `Set`, `Delete`, `Purge`, `Recover`.
+
+Secrets: `mssql-database-name` and `mssql-server-name`.
+
+Outputs: `app_gateway_id` (the whole gateway object), `nsg_ids`, `firewall_id`, `keyvault_name`.
+
+## Database module
+
+[modules/database/main.tf](modules/database/main.tf)
+
+| Resource | Configuration |
+|---|---|
+| `azurerm_mssql_server.mssqlsrv` | `bluegreen-mssqlsrv-dev`, version `12.0`, SQL authentication with the admin login and password, `public_network_access_enabled = true`, `SystemAssigned` identity, tagged with environment and project. The `minimum_tls_version` line is commented out. |
+| `azurerm_mssql_database.mssqldb` | `bluegreen-mssqldb-dev`, `S0`, 10 GB, collation `SQL_Latin1_General_CP1_CI_AS`, license `BasePrice`, enclave type `VBS`, `prevent_destroy = false` |
+
+The `azurerm_mssql_virtual_network_rule` resource is commented out; private connectivity comes from the private endpoint declared in the root module instead.
+
+Outputs: `server_id`, `database_id`, `server_name`, `database_name`.
+
+## Monitoring module
+
+[modules/monitoring/main.tf](modules/monitoring/main.tf)
+
+| Resource | Configuration |
+|---|---|
+| `azurerm_log_analytics_workspace.log_analytics` | `bluegreen-loganalytics-dev`, `PerGB2018`, 30-day retention |
+| `azurerm_application_insights.app_insights` | `bluegreen-appinsights-dev`, type `web`, linked to the workspace, `internet_ingestion_enabled = false`, `internet_query_enabled = false` |
+
+Outputs: `instrumentation_key`, `app_insights_id`. Neither is consumed by another module — the web app's app settings do not reference Application Insights.
+
+## Naming convention
+
+| Resource | Pattern | `dev` value |
+|---|---|---|
+| Resource group | `{project}-rg-{env}` | `bluegreen-rg-dev` |
+| Managed identity | `{project}-identity-{env}` | `bluegreen-identity-dev` |
+| Virtual network | `{project}-vnet-{env}` | `bluegreen-vnet-dev` |
+| Subnet | `{project}-subnet-{tier}-{env}` | `bluegreen-subnet-app-dev` |
 | Public IP | `{project}-pip-{env}` | `bluegreen-pip-dev` |
-| Traffic Manager Profile | `{project}-traman-{env}` | `bluegreen-traman-dev` |
+| Public IP DNS label | `{project}-dns-{env}-{hex}` | `bluegreen-dns-dev-a1b2c3d4` |
+| Traffic Manager profile | `{project}-traman-{env}` | `bluegreen-traman-dev` |
 | Traffic Manager DNS | `{project}-tm-{env}` | `bluegreen-tm-dev.trafficmanager.net` |
-| Traffic Manager Endpoint | `{project}-traman-endpoint-{env}` | `bluegreen-traman-endpoint-dev` |
+| Traffic Manager endpoint | `{project}-traman-endpoint-{env}` | `bluegreen-traman-endpoint-dev` |
 | App Service Plan | `{project}-asp-{env}` | `bluegreen-asp-dev` |
-| Web App | `{project}-webapp-{env}` | `bluegreen-webapp-dev` |
-| Blue Slot | `{project}-webapp-staging-{env}` | `bluegreen-webapp-staging-dev` |
-| Green Slot | `{project}-webapp-staging2-{env}` | `bluegreen-webapp-staging2-dev` |
+| Web app | `{project}-webapp-{env}` | `bluegreen-webapp-dev` |
+| Blue slot | `{project}-webapp-staging-{env}` | `bluegreen-webapp-staging-dev` |
+| Green slot | `{project}-webapp-staging2-{env}` | `bluegreen-webapp-staging2-dev` |
 | Application Gateway | `{project}-appgw-{env}` | `bluegreen-appgw-dev` |
-| WAF Policy | `{project}-waf-policy-{env}` | `bluegreen-waf-policy-dev` |
-| NSG | `{project}-{tier}-nsg-{env}` | `bluegreen-app-nsg-dev` |
+| WAF policy | `{project}-wafpolicy-{env}` | `bluegreen-wafpolicy-dev` |
+| Web / database NSG | `{project}-nsg-{env}` | `bluegreen-nsg-dev` |
+| App NSG | `{project}-app-nsg-{env}` | `bluegreen-app-nsg-dev` |
+| Key Vault | `{project}-{env}-kvbg` | `bluegreen-dev-kvbg` |
 | MSSQL Server | `{project}-mssqlsrv-{env}` | `bluegreen-mssqlsrv-dev` |
 | MSSQL Database | `{project}-mssqldb-{env}` | `bluegreen-mssqldb-dev` |
-| VNet Rule | `{project}-vnetrule-{env}` | `bluegreen-vnetrule-dev` |
+| Private endpoint | `{project}-pe-{target}-{env}` | `bluegreen-pe-sql-dev` |
+| Private DNS link | `{project}-dns-link-{target}-{env}` | `bluegreen-dns-link-sql-dev` |
+| Log Analytics | `{project}-loganalytics-{env}` | `bluegreen-loganalytics-dev` |
+| Application Insights | `{project}-appinsights-{env}` | `bluegreen-appinsights-dev` |
 
-## 🔄 Deployment Sequence
+## State
 
-```
-Step 1: Networking Module
-   ├── Generate Random ID (for unique server names)
-   ├── Create Virtual Network
-   ├── Create Web Subnet
-   ├── Create App Subnet
-   ├── Create Database Subnet
-   ├── Create Public IP (Static)
-   ├── Create Traffic Manager Profile
-   │   ├── Configure DNS (bluegreen-tm-dev.trafficmanager.net)
-   │   ├── Configure Health Monitoring (HTTPS:443)
-   │   └── Set Routing Method (Priority)
-   └── Create Traffic Manager Endpoint
-       ├── Link to Public IP
-       └── Configure Weight (100) and Always Serve
+[env/dev/backend.tf](env/dev/backend.tf) stores state in the `tfstate` container of storage account `myprojectstatedevbg` in resource group `myprojectdev-bg-rg`, under the key `terraform.tfstate`. That account is created by [backend/main.tf](backend/main.tf) from `project_name = "myproject"` and `environment = "dev"` defaults: Standard LRS, TLS 1.2 minimum, HTTPS-only, blob versioning on, 30-day delete retention, private container access.
 
-Step 2: Database Module
-   ├── Create MSSQL Server
-   ├── Create MSSQL Database
-   └── Create VNet Rule
+## Environments
 
-Step 3: Compute Module
-   ├── Create App Service Plan
-   ├── Create Production Web App
-   │   └── Configure DB Connection String
-   ├── Create Blue Slot (staging)
-   ├── Create Green Slot (staging2)
-   ├── Set Active Slot (Blue Slot)
-   ├── Configure VNet Integration (Production)
-   ├── Configure VNet Integration (Blue Slot)
-   └── Configure VNet Integration (Green Slot)
-
-Step 4: Security Module
-   ├── Create Application Gateway
-   │   ├── Configure Frontend (Public IP)
-   │   ├── Configure Backend Pool
-   │   ├── Configure Health Probe
-   │   └── Configure Routing Rules
-   ├── Create WAF Policy
-   │   ├── Configure OWASP Rules
-   │   └── Configure Custom Rules
-   ├── Create Web NSG + Rules
-   ├── Create App NSG + Rules
-   ├── Create Database NSG + Rules
-   └── Associate NSGs to Subnets
-```
-
-## 🎯 Blue-Green Deployment Strategy
-
-### Advantages
-- **Zero Downtime**: Instant swap between slots
-- **Instant Rollback**: Swap back to previous slot if issues detected
-- **Testing in Production Environment**: Test new version in exact production configuration
-- **Gradual Rollout**: Can use traffic routing percentages
-- **Independent Slots**: Each slot has its own configuration and can be tested independently
-
-### Deployment Steps
-
-1. **Deploy to Blue Slot**
-   ```bash
-   # Deploy new version to Blue slot
-   az webapp deployment source config-zip \
-     --resource-group bluegreen-rg-dev \
-     --name bluegreen-webapp-dev \
-     --slot staging \
-     --src app-v2.0.zip
-   ```
-
-2. **Validate Blue Slot**
-   ```bash
-   # Access Blue slot URL
-   https://bluegreen-webapp-dev-staging.azurewebsites.net
-   
-   # Run tests and validation
-   ```
-
-3. **Swap Blue to Production**
-   ```bash
-   # Swap Blue slot with Production
-   az webapp deployment slot swap \
-     --resource-group bluegreen-rg-dev \
-     --name bluegreen-webapp-dev \
-     --slot staging \
-     --target-slot production
-   ```
-
-4. **Monitor Production**
-   ```bash
-   # Monitor production metrics
-   # If issues detected, swap back immediately
-   ```
-
-5. **Rollback (if needed)**
-   ```bash
-   # Instant rollback by swapping back
-   az webapp deployment slot swap \
-     --resource-group bluegreen-rg-dev \
-     --name bluegreen-webapp-dev \
-     --slot staging \
-     --target-slot production
-   ```
-
-6. **Next Deployment Cycle**
-   ```bash
-   # Use Green slot for next deployment
-   az webapp deployment source config-zip \
-     --resource-group bluegreen-rg-dev \
-     --name bluegreen-webapp-dev \
-     --slot staging2 \
-     --src app-v3.0.zip
-   ```
-
-## 🔍 Slot Configuration
-
-### Active Slot Management
-
-The infrastructure uses `azurerm_web_app_active_slot` to explicitly designate which deployment slot is active:
-
-```hcl
-resource "azurerm_web_app_active_slot" "acive_slot" {
-  slot_id = azurerm_linux_web_app_slot.blue.id
-}
-```
-
-**Benefits:**
-- **Explicit Control**: Terraform manages which slot receives production traffic
-- **Declarative State**: Active slot is defined in code, not just through portal/CLI
-- **Consistent Deployments**: Ensures the correct slot is active across environments
-- **Auditability**: Changes to active slot are tracked in version control
-
-**Default Configuration:**
-- Blue Slot is set as the active slot by default
-- Can be changed by updating the `slot_id` reference
-- Requires manual swap operations to change traffic routing
-
-### Production Slot
-- **Name**: `bluegreen-webapp-dev`
-- **Environment**: Production
-- **Traffic**: 100% (default)
-- **VNet Integration**: App Subnet
-- **Database Connection**: Production connection string
-
-### Blue Slot (staging)
-- **Name**: `bluegreen-webapp-staging-dev`
-- **Environment**: Staging
-- **Traffic**: 0% (testing only)
-- **VNet Integration**: App Subnet
-- **Database Connection**: Same as production (shared)
-
-### Green Slot (staging2)
-- **Name**: `bluegreen-webapp-staging2-dev`
-- **Environment**: Staging
-- **Traffic**: 0% (testing only)
-- **VNet Integration**: App Subnet
-- **Database Connection**: Same as production (shared)
-
-## 📈 Monitoring and Health Checks
-
-### Traffic Manager Health Monitoring
-```
-Protocol: HTTPS
-Port: 443
-Path: /
-Interval: 30 seconds
-Timeout: 10 seconds
-Tolerated Failures: 3
-Endpoint Weight: 100
-Always Serve: Enabled
-```
-
-**Traffic Manager Benefits:**
-- **DNS-level Failover**: Automatic traffic routing based on endpoint health
-- **Global Load Balancing**: Distribute traffic across regions (if multi-region)
-- **Performance Routing**: Route users to nearest healthy endpoint
-- **Monitoring**: Continuous health checks every 30 seconds
-- **Fast TTL**: 100-second TTL for quick DNS propagation
-
-### Application Gateway Health Probe
-```
-Name: appgw-health-probe
-Protocol: HTTPS
-Host: localhost
-Path: /
-Interval: 30 seconds
-Timeout: 30 seconds
-Unhealthy Threshold: 3 attempts
-```
-
-### WAF Monitoring
-- **Mode**: Prevention
-- **Request Body Check**: Enabled
-- **File Upload Limit**: 100MB
-- **Max Request Body Size**: 128KB
-- **Rule Set**: OWASP 3.2
-- **Custom Rules**: Block bad bots
-
-## 🔧 Key Configuration Details
-
-### App Service Configuration
-```hcl
-App Settings:
-  WEBSITES_ENABLE_APP_SERVICE_STORAGE = "false"
-  DATABASE_URL = "Server={server};Database={db};User Id={user};Password={pwd};"
-  WEBSITES_PORT = "3000"
-
-SKU: P1v2
-OS: Linux
-VNet Integration: Enabled on all slots
-```
-
-### Database Configuration
-```hcl
-MSSQL Server:
-  Version: 12.0
-  TLS: 1.2 minimum
-  Identity: System Assigned
-  
-MSSQL Database:
-  SKU: S0
-  Max Size: 10GB
-  Collation: SQL_Latin1_General_CP1_CI_AS
-  License Type: BasePrice
-  Enclave Type: VBS
-  Lifecycle: prevent_destroy enabled
-```
-
-### Traffic Manager Configuration
-```hcl
-Profile:
-  Name: bluegreen-traman-dev
-  Status: Enabled
-  Routing Method: Priority
-  
-DNS Configuration:
-  Relative Name: bluegreen-tm-dev
-  FQDN: bluegreen-tm-dev.trafficmanager.net
-  TTL: 100 seconds
-  
-Health Monitoring:
-  Protocol: HTTPS
-  Port: 443
-  Path: /
-  Interval: 30 seconds
-  Timeout: 10 seconds
-  Tolerated Failures: 3
-  
-Endpoint:
-  Type: Azure Endpoint
-  Target: Public IP (Static)
-  Weight: 100
-  Always Serve: Enabled
-```
-
-### Application Gateway Configuration
-```hcl
-SKU: WAF_v2
-Autoscaling:
-  Min Capacity: 2
-  Max Capacity: 5
-  
-Frontend:
-  Port: 80
-  IP: Public Static IP
-  
-Backend:
-  Port: 443
-  Protocol: HTTPS
-  
-WAF Policy:
-  Mode: Prevention
-  OWASP: 3.2
-```
-
-## 📝 Best Practices Implemented
-
-1. **High Availability**
-   - Traffic Manager for DNS-level health monitoring and routing
-   - Application Gateway autoscaling (2-5 instances)
-   - Multiple deployment slots for zero-downtime deployments
-   - Active slot configuration managed via Infrastructure as Code
-
-2. **Security**
-   - WAF with OWASP 3.2 rules
-   - Network segmentation with separate subnets
-   - NSG rules limiting traffic
-   - VNet integration for all components
-   - TLS 1.2 minimum for database
-
-3. **Resilience**
-   - Database lifecycle protection (prevent_destroy)
-   - Health probes for automatic failover
-   - Instant rollback capability via slot swaps
-
-4. **Operational Excellence**
-   - Modular Terraform structure
-   - Consistent naming conventions
-   - Environment-based configurations
-   - Managed identities for security
-
-## 🚀 Quick Start
-
-```bash
-# Initialize Terraform
-cd env/dev
-terraform init
-
-# Plan deployment
-terraform plan
-
-# Apply infrastructure
-terraform apply
-
-# Verify deployment
-az webapp list --resource-group bluegreen-rg-dev --output table
-az webapp deployment slot list --resource-group bluegreen-rg-dev --name bluegreen-webapp-dev --output table
-
-# Verify Traffic Manager
-az network traffic-manager profile list --resource-group bluegreen-rg-dev --output table
-az network traffic-manager endpoint list --resource-group bluegreen-rg-dev --profile-name bluegreen-traman-dev --output table
-
-# Test DNS resolution
-nslookup bluegreen-tm-dev.trafficmanager.net
-```
-
-## 📚 Additional Resources
-
-- [Azure App Service Deployment Slots](https://docs.microsoft.com/en-us/azure/app-service/deploy-staging-slots)
-- [Blue-Green Deployment Pattern](https://docs.microsoft.com/en-us/azure/architecture/patterns/blue-green-deployment)
-- [Azure Application Gateway WAF](https://docs.microsoft.com/en-us/azure/web-application-firewall/)
-- [Terraform Azure Provider](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs)
+Only `env/dev` is populated. `env/stage` and `env/prod` contain the same six filenames created by [create_structure.sh](create_structure.sh), all zero bytes.
