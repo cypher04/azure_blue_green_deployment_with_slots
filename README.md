@@ -1,201 +1,57 @@
 # Azure Blue-Green Deployment with App Service Slots
 
-## Overview
+Terraform infrastructure for a blue-green deployment on Azure App Service, plus the Node.js application that runs on it. The production web app carries two deployment slots — blue (`staging`) and green (`staging2`) — and Terraform declares which slot is active. Traffic reaches the platform through Azure Traffic Manager and through an Application Gateway with a WAF policy in front of a static public IP.
 
-This project provisions a **blue-green deployment architecture** on Azure using **App Service deployment slots**, managed entirely through Terraform. It enables zero-downtime releases with instant rollback by routing traffic between a production slot and two staging slots (blue and green) via Azure Traffic Manager.
+## Contents
 
-The infrastructure follows a **multi-tier, modular design** with isolated subnets for web, application, and database layers, secured by Network Security Groups, a Web Application Firewall (WAF), and Azure Key Vault for secrets management.
-
-### Key Capabilities
-
-- **Zero-downtime deployments** through App Service slot swapping
-- **Instant rollback** by reverting the active slot designation
-- **WAF protection** with OWASP 3.2 managed rules and custom IP-based rules
-- **Secret management** via Azure Key Vault with User Assigned Managed Identity
-- **Network isolation** with dedicated subnets and NSG rules per tier
-- **Traffic routing** through Azure Traffic Manager with priority-based routing and health monitoring
-- **Remote state** stored in Azure Blob Storage with versioning and soft delete
-
----
-
-## Architecture
-
-```
-                        Internet
-                           |
-                   Traffic Manager
-                  (Priority Routing)
-                           |
-                      Public IP
-                       (Static)
-                           |
-               Application Gateway (WAF_v2)
-              WAF Policy (OWASP 3.2, Prevention)
-                           |
-        ┌──────────────────────────────────────────┐
-        │          Virtual Network (VNet)           │
-        │                                          │
-        │  ┌────────────────────────────────────┐  │
-        │  │  Web Subnet          [Web NSG]     │  │
-        │  │  Application Gateway               │  │
-        │  └────────────────────────────────────┘  │
-        │                  |                       │
-        │  ┌────────────────────────────────────┐  │
-        │  │  App Subnet          [App NSG]     │  │
-        │  │  App Service Plan (Linux, P1v3)    │  │
-        │  │  ├─ Production Web App             │  │
-        │  │  ├─ Blue Slot (staging)            │  │
-        │  │  └─ Green Slot (staging2)          │  │
-        │  │  VNet Integration (all slots)      │  │
-        │  └────────────────────────────────────┘  │
-        │                  |                       │
-        │  ┌────────────────────────────────────┐  │
-        │  │  Database Subnet     [Data NSG]    │  │
-        │  │  MSSQL Server (v12.0, TLS 1.2)     │  │
-        │  │  MSSQL Database (S0, 10 GB)        │  │
-        │  └────────────────────────────────────┘  │
-        └──────────────────────────────────────────┘
-
-        ┌──────────────────────────────────────────┐
-        │  Supporting Services                     │
-        │  • Key Vault (secrets for DB creds)      │
-        │  • User Assigned Managed Identity        │
-        │  • Log Analytics Workspace               │
-        │  • Application Insights                  │
-        └──────────────────────────────────────────┘
-```
-
----
-
-## Project Structure
-
-```
-├── README.md
-├── ARCHITECTURE.md
-├── PROJECT_STRUCTURE.txt
-│
-├── backend/                    # Remote state infrastructure
-│   ├── main.tf                 # Storage Account + Container for tfstate
-│   └── providers.tf            # AzureRM provider config
-│
-├── env/                        # Per-environment root modules
-│   ├── dev/
-│   │   ├── main.tf             # Root module: wires all child modules
-│   │   ├── variables.tf        # Input variable declarations
-│   │   ├── outputs.tf          # Root-level outputs
-│   │   ├── providers.tf        # AzureRM v4.1.0 provider
-│   │   ├── backend.tf          # Azure Storage backend config
-│   │   └── terraform.tfvars    # Environment-specific values
-│   ├── stage/                  # Staging environment (same structure)
-│   └── prod/                   # Production environment (same structure)
-│
-├── modules/
-│   ├── compute/                # App Service Plan, Web App, Slots, VNet Integration
-│   ├── networking/             # VNet, Subnets, Public IP, Traffic Manager
-│   ├── security/               # Application Gateway, WAF, NSGs, Key Vault
-│   ├── database/               # MSSQL Server + Database
-│   └── monitoring/             # Log Analytics, Application Insights
-│
-└── workspace/                  # VS Code workspace files
-```
-
----
-
-## Modules
-
-### Compute
-
-Provisions the application hosting layer.
-
-| Resource | Description |
+| Path | Purpose |
 |---|---|
-| `azurerm_service_plan` | Linux App Service Plan (P1v3 SKU) |
-| `azurerm_linux_web_app` | Production web app with UserAssigned identity, client certificate auth, and Key Vault-backed app settings |
-| `azurerm_linux_web_app_slot` (blue) | Staging slot for new deployments |
-| `azurerm_linux_web_app_slot` (green) | Secondary staging slot for alternating releases |
-| `azurerm_web_app_active_slot` | Designates which slot receives production traffic |
-| `azurerm_app_service_virtual_network_swift_connection` | VNet integration for the production app and both slots |
-| `azurerm_role_assignment` | Grants Contributor on MSSQL Server and Key Vault Secrets User to the managed identity |
+| [ARCHITECTURE.md](ARCHITECTURE.md) | Resource-by-resource description of the deployed infrastructure |
+| [TRAFFIC_FLOW.md](TRAFFIC_FLOW.md) | How a request travels from DNS to the database, and how the slots swap |
+| [backend/](backend/) | Storage Account and container that hold the remote Terraform state |
+| [env/dev/](env/dev/) | The root module that is wired up and deployable |
+| [env/stage/](env/stage/), [env/prod/](env/prod/) | Directory scaffolding only — all files are empty |
+| [modules/](modules/) | `networking`, `compute`, `security`, `database`, `monitoring` |
+| [app/](app/) | Express + MSSQL application deployed into the web app and slots |
+| [create_structure.sh](create_structure.sh) | Script that generated the original directory skeleton |
 
-### Networking
+## Infrastructure summary
 
-Provisions the network foundation and traffic routing.
+The `dev` root module ([env/dev/main.tf](env/dev/main.tf)) creates a resource group and a user-assigned managed identity, calls the five modules, and then adds private endpoints and private DNS zones for both the SQL Server and the web app.
 
-| Resource | Description |
-|---|---|
-| `azurerm_virtual_network` | VNet with configurable address space |
-| `azurerm_subnet` (web) | Hosts the Application Gateway |
-| `azurerm_subnet` (app) | Hosts App Service with `Microsoft.Web/serverFarms` delegation |
-| `azurerm_subnet` (database) | Hosts the MSSQL Server |
-| `azurerm_public_ip` | Static public IP with DNS label (used by Application Gateway and Traffic Manager) |
-| `azurerm_traffic_manager_profile` | Priority-based routing with HTTPS health monitoring (30s interval, 10s timeout) |
-| `azurerm_traffic_manager_azure_endpoint` | Routes traffic to the static public IP |
+**Networking** — a VNet with four subnets (`web`, `appgw`, `app`, `database`). The `app` subnet is delegated to `Microsoft.Web/serverFarms` and carries service endpoints for Key Vault and SQL. A static public IP with a randomised DNS label fronts the Application Gateway. A Traffic Manager profile using priority routing points its single Azure endpoint at the blue slot.
 
-### Security
+**Compute** — a Linux P1v3 App Service Plan, a Node 20 LTS web app, the blue and green slots, and an `azurerm_web_app_active_slot` resource that names blue as active. All three sites are VNet-integrated into the `app` subnet through swift connections. Two role assignments grant the managed identity Contributor and Key Vault Secrets User on the SQL Server scope.
 
-Provisions the WAF, NSGs, and secrets management.
+**Security** — an Application Gateway on the `appgw` subnet (WAF_v2, autoscaling 2–5 instances) whose backend pool is the production web app's default hostname; a WAF policy in Prevention mode with OWASP 3.2 and two custom IP-match rules; three NSGs associated with the `web`, `app`, and `database` subnets; and a Key Vault holding the SQL Server and database names as secrets.
 
-| Resource | Description |
-|---|---|
-| `azurerm_application_gateway` | WAF_v2 tier with autoscaling (2-5 instances), health probes, and backend routing |
-| `azurerm_web_application_firewall_policy` | OWASP 3.2 in Prevention mode with custom IP-block rules and header/cookie exclusions |
-| `azurerm_network_security_group` (x3) | Dedicated NSGs for web, app, and database subnets |
-| `azurerm_network_security_rule` | HTTPS inbound/outbound rules; AppGW management ports (65200-65535) on web NSG |
-| `azurerm_subnet_network_security_group_association` (x3) | Associates each NSG with its respective subnet |
-| `azurerm_key_vault` | Stores database credentials; access policies for the managed identity and the Terraform executor |
-| `azurerm_key_vault_secret` (x2) | Stores MSSQL server name and database name |
+**Database** — an MSSQL Server v12.0 with a system-assigned identity and an S0 / 10 GB database using the VBS enclave type. The server is reached privately through a private endpoint in the `database` subnet.
 
-### Database
+**Monitoring** — a Log Analytics workspace (PerGB2018, 30-day retention) and an Application Insights instance linked to it, with internet ingestion and query disabled.
 
-Provisions the data tier.
+## Application
 
-| Resource | Description |
-|---|---|
-| `azurerm_mssql_server` | SQL Server v12.0, TLS 1.2 minimum, public network access disabled, SystemAssigned identity |
-| `azurerm_mssql_database` | S0 SKU, 10 GB max size, SQL_Latin1_General_CP1_CI_AS collation, VBS enclave |
+[app/](app/) is an Express app that renders an EJS page and exposes a CRUD API:
 
-### Monitoring
+| Route | Method | Behaviour |
+|---|---|---|
+| `/` | GET | Renders `index.ejs` with the database connection status |
+| `/health` | GET | Returns `200` with `{status: "healthy"}`, or `503` when the database is unreachable |
+| `/api/items` | GET, POST | List all items, create an item |
+| `/api/items/:id` | GET, PUT, DELETE | Read, update, delete a single item |
 
-Provisions observability resources.
-
-| Resource | Description |
-|---|---|
-| `azurerm_log_analytics_workspace` | PerGB2018 SKU, 30-day retention |
-| `azurerm_application_insights` | Web application type, linked to Log Analytics workspace, internet ingestion/query disabled |
-
----
+[app/db.js](app/db.js) parses the `DATABASE_URL` app setting (`Server=…;Database=…;User Id=…;Password=…;`) into an `mssql` pool config, falling back to `DB_SERVER` / `DB_NAME` / `DB_USER` / `DB_PASSWORD` for local development. On start, [app/server.js](app/server.js) creates the `items` table if it does not already exist. The app listens on `PORT`, defaulting to 3000, which matches the `WEBSITES_PORT` app setting.
 
 ## Prerequisites
 
-- [Terraform](https://developer.hashicorp.com/terraform/downloads) >= 1.0
-- [Azure CLI](https://learn.microsoft.com/en-us/cli/azure/install-azure-cli) >= 2.50
-- An active Azure subscription with sufficient quota for the target region
-- An Azure Storage Account pre-provisioned for remote state (see `backend/` directory)
-- Authenticated Azure CLI session (`az login`)
+- Terraform >= 1.0
+- Azure CLI, authenticated with `az login`
+- An Azure subscription with quota for a P1v3 plan, a WAF_v2 gateway, and an S0 database in the target region
+- Node.js >= 20 to run or package the app locally
 
----
+## Deploy
 
-## Input Variables
-
-| Variable | Type | Description | Sensitive |
-|---|---|---|---|
-| `project_name` | `string` | Name prefix used for all resources | No |
-| `resource_group` | `string` | Name of the resource group | No |
-| `environment` | `string` | Deployment environment (e.g., `dev`, `stage`, `prod`) | No |
-| `subscription_id` | `string` | Azure subscription ID | No |
-| `location` | `string` | Azure region (default: `East US`) | No |
-| `address_space` | `list(string)` | VNet address space (e.g., `["10.0.0.0/16"]`) | No |
-| `subnet_prefixes` | `map(string)` | Subnet CIDR blocks keyed by tier (`web`, `app`, `database`) | No |
-| `administrator_login` | `string` | SQL Server administrator username | No |
-| `administrator_password` | `string` | SQL Server administrator password | **Yes** |
-
-> **Important**: Never commit `terraform.tfvars` files containing sensitive values to version control. Use environment variables, Azure Key Vault references, or a `.gitignore` entry to protect secrets.
-
----
-
-## Usage
-
-### 1. Provision the Remote State Backend
+### 1. Create the state backend
 
 ```bash
 cd backend
@@ -203,30 +59,31 @@ terraform init
 terraform apply
 ```
 
-This creates the Azure Storage Account and blob container used for Terraform remote state.
+This creates the resource group `myprojectdev-bg-rg`, the storage account `myprojectstatedevbg`, and the `tfstate` container, with blob versioning, a 30-day delete retention policy, TLS 1.2, and HTTPS-only enforced. These names are what [env/dev/backend.tf](env/dev/backend.tf) expects.
 
-### 2. Configure Environment Variables
-
-Create a `terraform.tfvars` file in the target environment directory (e.g., `env/dev/`) with required values:
+### 2. Fill in `env/dev/terraform.tfvars`
 
 ```hcl
-project_name        = "myproject"
-environment         = "dev"
-subscription_id     = "<your-subscription-id>"
-location            = "West Europe"
-resource_group      = "<your-resource-group>"
-address_space       = ["10.0.0.0/16"]
-administrator_login = "<your-sql-admin>"
-administrator_password = "<your-sql-password>"
+project_name           = "bluegreen"
+resource_group         = "bluegreen-rg-dev"
+environment            = "dev"
+subscription_id        = "<subscription-id>"
+location               = "West Europe"
+address_space          = ["10.0.0.0/16"]
+administrator_login    = "<sql-admin-login>"
+administrator_password = "<sql-admin-password>"
 
 subnet_prefixes = {
   web      = "10.0.1.0/24"
   app      = "10.0.2.0/24"
   database = "10.0.3.0/24"
+  appgw    = "10.0.4.0/24"
 }
 ```
 
-### 3. Deploy Infrastructure
+All four subnet keys are required: `web`, `app`, and `database` are consumed by the networking and security modules, and `appgw` provides the dedicated Application Gateway subnet. `*.tfvars` is git-ignored.
+
+### 3. Apply
 
 ```bash
 cd env/dev
@@ -235,105 +92,78 @@ terraform plan
 terraform apply
 ```
 
-### 4. Deploy to Other Environments
+### 4. Deploy the application
 
-Repeat the same steps in `env/stage/` or `env/prod/` with environment-specific `.tfvars` files.
+```bash
+cd app
+npm install
+zip -r ../app.zip . -x "node_modules/*"
 
----
-
-## Blue-Green Deployment Workflow
-
-1. **Initial state**: The production web app serves live traffic. Blue and green slots are idle.
-2. **Deploy new version**: Push the new application version to the **blue** slot.
-3. **Validate**: Test the blue slot URL to verify the deployment.
-4. **Swap**: Update `azurerm_web_app_active_slot` to point to the blue slot, then run `terraform apply`. Traffic shifts instantly.
-5. **Rollback** (if needed): Revert the active slot to the previous configuration and reapply.
-6. **Next release**: Deploy to the **green** slot and repeat the cycle.
-
-```
-Cycle 1:  Production ← Swap ← Blue (v2.0)
-Cycle 2:  Production ← Swap ← Green (v3.0)
-Cycle 3:  Production ← Swap ← Blue (v4.0)
-...
+az webapp deploy \
+  --resource-group bluegreen-rg-dev \
+  --name bluegreen-webapp-dev \
+  --slot staging \
+  --src-path ../app.zip \
+  --type zip
 ```
 
----
+`SCM_DO_BUILD_DURING_DEPLOYMENT` is set to `true`, so Oryx runs `npm install` on the platform during deployment.
+
+## Blue-green workflow
+
+1. Deploy the new version to the idle slot — `staging` (blue) or `staging2` (green).
+2. Validate it on its own hostname, `https://bluegreen-webapp-staging-dev.azurewebsites.net` or `https://bluegreen-webapp-staging2-dev.azurewebsites.net`.
+3. Swap. Either point `azurerm_web_app_active_slot.acive_slot` at the other slot in [modules/compute/main.tf](modules/compute/main.tf#L94-L96) and re-apply, or swap out of band:
+   ```bash
+   az webapp deployment slot swap \
+     --resource-group bluegreen-rg-dev \
+     --name bluegreen-webapp-dev \
+     --slot staging \
+     --target-slot production
+   ```
+4. Roll back by swapping again — the previous build is still sitting in the slot you swapped out of.
+5. Alternate slots on each release: blue, then green, then blue.
+
+## Input variables
+
+| Variable | Type | Default | Description |
+|---|---|---|---|
+| `project_name` | `string` | — | Name prefix for every resource |
+| `resource_group` | `string` | — | Resource group name |
+| `environment` | `string` | — | Environment suffix (`dev`) |
+| `subscription_id` | `string` | — | Target Azure subscription |
+| `location` | `string` | `East US` | Azure region |
+| `address_space` | `list(string)` | — | VNet address space |
+| `subnet_prefixes` | `map(string)` | — | CIDR per subnet: `web`, `app`, `database`, `appgw` |
+| `administrator_login` | `string` | — | SQL Server administrator login |
+| `administrator_password` | `string` (sensitive) | — | SQL Server administrator password |
 
 ## Outputs
 
 | Output | Description |
 |---|---|
 | `resource_group_name` | Name of the created resource group |
-| `location` | Azure region of the deployment |
-| `environment` | Target environment name |
-| `subnet_prefixes` | Map of subnet CIDR blocks |
-| `subnet_ids` | Networking module subnet ID outputs |
+| `location` | Region of the resource group |
+| `environment` | Environment suffix |
+| `subnet_prefixes` | The subnet CIDR map that was passed in |
+| `subnet_ids` | The entire networking module object |
 | `public_ip_id` | ID of the static public IP |
-| `user_assigned_identity_id` | ID of the User Assigned Managed Identity |
+| `user_assigned_identity_id` | Resource ID of the managed identity |
 | `user_assigned_identity_principal_id` | Principal ID of the managed identity |
 | `user_assigned_identity_tenant_id` | Tenant ID of the managed identity |
 
----
+## Provider and state
 
-## Module Dependency Graph
+The `dev` environment pins `hashicorp/azurerm` at exactly `4.1.0` and sets `resource_group.prevent_deletion_if_contains_resources = false`, so `terraform destroy` removes the resource group along with its contents. The `backend/` configuration uses `~> 3.0` and holds its own state locally.
 
-```
-networking ──────────────┐
-                         ├──► security
-database ──► compute ────┘
-monitoring (independent)
-```
-
-- **compute** depends on **database** (receives server name, database name, server ID, database ID)
-- **security** depends on **networking** (receives subnet IDs, public IP) and **compute** (ensures web app exists before NSG associations)
-- **monitoring** has no inter-module dependencies
-
----
-
-## Terraform State Backend
-
-State is stored remotely in Azure Blob Storage:
-
-| Setting | Value |
-|---|---|
-| Storage Account | Provisioned via `backend/main.tf` |
-| Container | `tfstate` |
-| Blob Versioning | Enabled |
-| Delete Retention | 30 days |
-| TLS | 1.2 minimum |
-| HTTPS Only | Enabled |
-
----
-
-## Security Considerations
-
-- **Key Vault**: Purge protection enabled, soft delete with 7-day retention. Access policies scoped to the User Assigned Managed Identity and the Terraform executor.
-- **MSSQL Server**: Public network access disabled. TLS 1.2 enforced. SystemAssigned identity enabled.
-- **WAF**: OWASP 3.2 ruleset in Prevention mode. Custom rules block traffic from specified IP ranges.
-- **NSGs**: Least-privilege inbound/outbound rules per subnet tier. Application Gateway management ports (65200-65535) explicitly allowed on the web subnet NSG.
-- **App Service**: Client certificate authentication required. Auth settings enabled with redirect for unauthenticated clients.
-- **Sensitive variables**: The `administrator_password` variable is marked `sensitive` in Terraform to prevent it from appearing in plan output or state logs.
-
----
-
-## Clean Up
-
-To destroy all provisioned resources:
+## Tear down
 
 ```bash
 cd env/dev
 terraform destroy
-```
 
-To also remove the remote state backend:
-
-```bash
-cd backend
+cd ../../backend
 terraform destroy
 ```
 
----
-
-## License
-
-This project is provided as-is for educational and reference purposes.
+The database sets `prevent_destroy = false` and the state storage account does the same, so neither blocks a destroy. The Key Vault has purge protection enabled with a 7-day soft-delete retention, so its name cannot be reused until the retention period expires.
