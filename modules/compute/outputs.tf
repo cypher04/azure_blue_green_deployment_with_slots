@@ -25,3 +25,12 @@ output "fqdn" {
 output "webapp_id" {
     value = azurerm_linux_web_app.webapp.id
 }
+
+output "blue_slot_id" {
+    value = azurerm_linux_web_app_slot.blue.id
+}
+
+output "green_slot_id" {
+    value = azurerm_linux_web_app_slot.green.id
+}
+

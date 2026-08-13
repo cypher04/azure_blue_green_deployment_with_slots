@@ -48,6 +48,8 @@ module "networking" {
     address_space       = var.address_space
     resource_group = azurerm_resource_group.name.name
     public_ip_id       = module.networking.public_ip_id
+    blue_slot_id = module.compute.blue_slot_id
+    green_slot_id = module.compute.green_slot_id
 }
 
 module "security" {
