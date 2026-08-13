@@ -89,17 +89,15 @@ resource "azurerm_traffic_manager_profile" "traman" {
     }
 }
 
-
-// private dns zone for traffic manager profile
-
-
 resource "azurerm_traffic_manager_azure_endpoint" "tramanend" {
     name                = "${var.project_name}-traman-endpoint-${var.environment}"
     profile_id = azurerm_traffic_manager_profile.traman.id
-    target_resource_id = var.public_ip_id
-    always_serve_enabled = true
-    weight = 100
+    target_resource_id = var.blue_slot_id
+    priority = 1
+  
 }
+
+
 
 
 

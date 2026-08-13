@@ -33,5 +33,22 @@ variable "public_ip_id" {
     type        = string
 }
 
+# variable "app_service_id" {
+#     description = "The ID of the app service to connect to the virtual network."
+#     type        = string
+# }
 
+# variable "webapp_id" {
+#     description = "The ID of the web app to connect to the virtual network."
+#     type        = string
+# }
 
+variable "blue_slot_id" {
+    description = "The ID of the blue deployment slot."
+    type        = string
+}
+
+variable "green_slot_id" {
+    description = "The ID of the green deployment slot."
+    type        = string
+}
